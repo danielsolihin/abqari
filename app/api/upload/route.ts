@@ -23,8 +23,35 @@ function chunkText(text: string, chunkSize = 800, chunkOverlap = 100): string[] 
   return chunks;
 }
 
+// Fungsi pembantu untuk mengesahkan pengguna berasaskan Token Bearer
+async function getAuthenticatedUser(req: NextRequest) {
+  try {
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return null;
+    }
+
+    const token = authHeader.split(' ')[1];
+    const authClient = createClient(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+    
+    // Ekstrak user secara terus menggunakan token JWT
+    const { data: { user }, error } = await authClient.auth.getUser(token);
+    
+    if (error || !user) return null;
+    return user;
+  } catch (err) {
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
+    // 1. PENGESAHAN KESELAMATAN PENGGUNA
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Akses tidak dibenarkan. Sila log masuk.' }, { status: 401 });
+    }
+
     const formData = await req.formData();
     const file = formData.get('file') as File;
     const subjectId = formData.get('subjectId') as string;
@@ -96,12 +123,14 @@ export async function POST(req: NextRequest) {
     // Pembersihan aksara unicode tersembunyi
     extractedText = extractedText.replace(/\u0000/g, '').replace(/\\u0000/g, '');
 
+    // 2. SIMPAN DOKUMEN BERSAMA ID PENSYARAH (user_id)
     const { data: docData, error: docError } = await supabase
       .from('documents')
       .insert([{ 
         subject_id: subjectId,
         file_url: file.name,
-        file_name: file.name
+        file_name: file.name,
+        user_id: user.id // <--- INILAH PENYELESAIAN UTAMA KITA
       }])
       .select()
       .single();
