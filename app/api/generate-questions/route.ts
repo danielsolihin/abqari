@@ -59,10 +59,13 @@ export async function POST(req: NextRequest) {
     let relevantChunks = chunks;
 
     try {
-      // Jana vector embedding untuk kata kunci topik sasaran
+      // Jana vector embedding untuk kata kunci topik sasaran (Model baharu gemini-embedding-001 dengan 768 dimensi)
       const queryEmbedResponse = await ai.models.embedContent({
-        model: 'text-embedding-004',
+        model: 'gemini-embedding-001',
         contents: `${queryTopicText} ${THEME_KEYWORDS[theme] || ''}`,
+        config: {
+          outputDimensionality: 768,
+        },
       });
 
       const queryVector =
@@ -200,8 +203,9 @@ ${skemaPrompt}
 SKEMA JAWAPAN TAMAT
 `;
 
+    // DITUKAR: Naik taraf kepada model rasmi baharu gemini-3.6-flash
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: prompt,
     });
 
