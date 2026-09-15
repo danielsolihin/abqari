@@ -1,3 +1,4 @@
+import "pdf-parse/worker"; // Membaiki ralat DOMMatrix is not defined
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
