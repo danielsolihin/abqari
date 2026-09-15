@@ -1,16 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 
-// Inisialisasi Supabase Client untuk profil dinamik
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export default function PusatSumberPage() {
+function PusatSumberContent() {
   const searchParams = useSearchParams();
 
   // State Profil Pengguna Dinamik Supabase
@@ -22,9 +21,7 @@ export default function PusatSumberPage() {
     faculty: 'Akademi Pengajian Islam Kontemporari (ACIS)',
   });
 
-  // ==========================================
-  // ENJIN TERAS ASAL (DARI PAPAN PEMUKA PENTADBIR)
-  // ==========================================
+  // State Enjin Teras
   const [documents, setDocuments] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,13 +35,13 @@ export default function PusatSumberPage() {
   const [filterSubjectId, setFilterSubjectId] = useState('');
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
 
-  // Pembantu untuk mendapatkan Token Pengesahan Sesi Supabase
+  // Pembantu Token Pengesahan Sesi Supabase
   const getAuthHeaders = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
   };
 
-  // 1. Pengambilan Profil Pengguna Dinamik (Supabase Auth / LocalStorage)
+  // 1. Pengambilan Profil Pengguna
   useEffect(() => {
     const fetchUserProfile = async () => {
       try {
@@ -74,7 +71,7 @@ export default function PusatSumberPage() {
     fetchUserProfile();
   }, []);
 
-  // 2. Semak jika ada ID subjek dihantar dari URL (contoh: dari Pengurusan Kursus)
+  // 2. Semak ID subjek dari URL
   useEffect(() => {
     const subjectIdParam = searchParams.get('subjectId');
     if (subjectIdParam) {
@@ -83,9 +80,7 @@ export default function PusatSumberPage() {
     }
   }, [searchParams]);
 
-  // ==========================================
-  // FUNGSI API & FETCH (DIKEMAS KINI DENGAN HEADER AUTH)
-  // ==========================================
+  // 3. Fungsi Fetch API
   const fetchDocuments = async () => {
     setIsLoading(true);
     try {
@@ -116,9 +111,7 @@ export default function PusatSumberPage() {
     fetchSubjects();
   }, []);
 
-  // ==========================================
-  // ENJIN TURBO UPLOAD ASAL (DIKEMAS KINI DENGAN HEADER AUTH)
-  // ==========================================
+  // 4. Pengendali Muat Naik
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return alert('Sila pilih fail PDF.');
@@ -154,9 +147,7 @@ export default function PusatSumberPage() {
     }
   };
 
-  // ==========================================
-  // FUNGSI PADAM (DIKEMAS KINI DENGAN HEADER AUTH)
-  // ==========================================
+  // 5. Pengendali Padam
   const handleDelete = async (id: string) => {
     if (!confirm('Adakah anda pasti mahu memadam dokumen ini?')) return;
     try {
@@ -226,9 +217,6 @@ export default function PusatSumberPage() {
     else setSelectedDocIds([...selectedDocIds, id]);
   };
 
-  // ==========================================
-  // GAYA UI ABQARI
-  // ==========================================
   const styles = {
     page: { backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '"Inter", "Segoe UI", sans-serif', position: 'relative' as 'relative' },
     banner: {
@@ -274,14 +262,13 @@ export default function PusatSumberPage() {
              <p style={{ margin: 0, color: '#cbd5e1', fontSize: '1rem' }}>Muat naik bahan rujukan, modul, atau slaid kuliah untuk dianalisis oleh enjin ABQARI.</p>
           </div>
           
-          {/* PAPARAN PROFIL PENGGUNA DINAMIK */}
           <div style={{ color: 'white', textAlign: 'right', fontSize: '0.8rem' }}>
             <strong style={{ fontSize: '0.95rem', display: 'block' }}>{userProfile.name}</strong>
             <span style={{ opacity: 0.8 }}>{userProfile.faculty}</span>
           </div>
         </div>
 
-        {/* TIP: HANYA BOLEH UPLOAD JIKA TELAH DAFTAR DI PENGURUSAN KURSUS */}
+        {/* PANDUAN MUAT NAIK */}
         <div style={{ backgroundColor: '#eff6ff', padding: '15px 20px', borderRadius: '12px', border: '1px solid #bfdbfe', borderLeft: '5px solid #3b82f6', marginBottom: '25px', color: '#1e40af', fontSize: '0.9rem', display: 'flex', gap: '15px', alignItems: 'flex-start' }}>
           <div style={{ fontSize: '1.5rem' }}>💡</div>
           <div>
@@ -302,7 +289,6 @@ export default function PusatSumberPage() {
                   Padam Dipilih ({selectedDocIds.length})
                 </button>
               )}
-              {/* BUTANG UPLOAD */}
               <button style={{ ...styles.btnPrimary, backgroundColor: '#3b0764', boxShadow: '0 4px 6px rgba(59,7,100,0.2)' }} onClick={() => setIsModalOpen(true)}>
                 + Tambah Dokumen Baru
               </button>
@@ -333,7 +319,7 @@ export default function PusatSumberPage() {
             </div>
           </div>
 
-          {/* JADUAL DOKUMEN (ENJIN ASAL) */}
+          {/* JADUAL DOKUMEN */}
           {isLoading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
                <p>Memuatkan pangkalan data...</p>
@@ -383,9 +369,7 @@ export default function PusatSumberPage() {
         </div>
       </div>
 
-      {/* ==========================================
-          MODAL: UPLOAD (ENJIN TURBO ASAL)
-          ========================================== */}
+      {/* MODAL UPLOAD */}
       {isModalOpen && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalBox}>
@@ -423,7 +407,6 @@ export default function PusatSumberPage() {
                 )}
               </div>
 
-              {/* RUANGAN MUAT NAIK PDF */}
               <div style={{ border: '2px dashed #cbd5e1', padding: '30px 20px', borderRadius: '12px', textAlign: 'center', backgroundColor: '#f8fafc', marginBottom: '25px' }}>
                 <label style={{ display: 'block', marginBottom: '10px', color: '#334155', fontWeight: '700' }}>Fail PDF (Wajib) <span style={{ color: '#ef4444' }}>*</span></label>
                 <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} required style={{ margin: '0 auto', display: 'block', cursor: 'pointer' }} />
@@ -443,5 +426,17 @@ export default function PusatSumberPage() {
       )}
 
     </div>
+  );
+}
+
+export default function PusatSumberPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f8fafc', color: '#3b0764', fontFamily: 'sans-serif' }}>
+        <h2>Memuatkan Pusat Sumber...</h2>
+      </div>
+    }>
+      <PusatSumberContent />
+    </Suspense>
   );
 }
