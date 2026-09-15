@@ -38,6 +38,12 @@ export default function PusatSumberPage() {
   const [filterSubjectId, setFilterSubjectId] = useState('');
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
 
+  // Pembantu untuk mendapatkan Token Pengesahan Sesi Supabase
+  const getAuthHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+  };
+
   // 1. Pengambilan Profil Pengguna Dinamik (Supabase Auth / LocalStorage)
   useEffect(() => {
     const fetchUserProfile = async () => {
@@ -78,12 +84,13 @@ export default function PusatSumberPage() {
   }, [searchParams]);
 
   // ==========================================
-  // FUNGSI API & FETCH (DIKEKALKAN 100%)
+  // FUNGSI API & FETCH (DIKEMAS KINI DENGAN HEADER AUTH)
   // ==========================================
   const fetchDocuments = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/documents');
+      const authHeaders = await getAuthHeaders();
+      const res = await fetch('/api/documents', { headers: { ...authHeaders } });
       const json = await res.json();
       if (json.success) setDocuments(json.data);
     } catch (error) {
@@ -95,7 +102,8 @@ export default function PusatSumberPage() {
 
   const fetchSubjects = async () => {
     try {
-      const res = await fetch('/api/subjects');
+      const authHeaders = await getAuthHeaders();
+      const res = await fetch('/api/subjects', { headers: { ...authHeaders } });
       const json = await res.json();
       if (json.success) setSubjects(json.data);
     } catch (error) {
@@ -109,7 +117,7 @@ export default function PusatSumberPage() {
   }, []);
 
   // ==========================================
-  // ENJIN TURBO UPLOAD ASAL (DIKEKALKAN 100%)
+  // ENJIN TURBO UPLOAD ASAL (DIKEMAS KINI DENGAN HEADER AUTH)
   // ==========================================
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,8 +130,10 @@ export default function PusatSumberPage() {
     formData.append('subjectId', selectedSubjectId);
 
     try {
+      const authHeaders = await getAuthHeaders();
       const res = await fetch('/api/upload', {
         method: 'POST',
+        headers: { ...authHeaders },
         body: formData,
       });
       const json = await res.json();
@@ -145,14 +155,15 @@ export default function PusatSumberPage() {
   };
 
   // ==========================================
-  // FUNGSI PADAM (DIKEKALKAN 100%)
+  // FUNGSI PADAM (DIKEMAS KINI DENGAN HEADER AUTH)
   // ==========================================
   const handleDelete = async (id: string) => {
     if (!confirm('Adakah anda pasti mahu memadam dokumen ini?')) return;
     try {
+      const authHeaders = await getAuthHeaders();
       const res = await fetch('/api/documents', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ id }),
       });
       const json = await res.json();
@@ -172,11 +183,13 @@ export default function PusatSumberPage() {
     if (!confirm(`AMARAN: Anda pasti mahu memadam ${selectedDocIds.length} dokumen ini secara serentak?`)) return;
 
     let successCount = 0;
+    const authHeaders = await getAuthHeaders();
+
     for (const id of selectedDocIds) {
       try {
         await fetch('/api/documents', {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
           body: JSON.stringify({ id }),
         });
         successCount++;
