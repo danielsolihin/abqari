@@ -1,0 +1,39 @@
+{
+  "name": "smart-question",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@google/genai": "^2.22.0",
+    "@langchain/community": "^1.1.29",
+    "@langchain/core": "^1.2.11",
+    "@langchain/google-genai": "^2.3.2",
+    "@langchain/openai": "^1.5.13",
+    "@langchain/textsplitters": "^1.0.1",
+    "@supabase/supabase-js": "latest",
+    "docx": "^9.7.1",
+    "docxtemplater": "^3.69.3",
+    "file-saver": "^2.0.5",
+    "langchain": "latest",
+    "next": "latest",
+    "pdf-parse": "^2.4.5",
+    "pdf-parse-fork": "^1.2.0",
+    "pizzip": "^3.2.0",
+    "react": "latest",
+    "react-dom": "latest",
+    "react-hook-form": "latest"
+  },
+  "devDependencies": {
+    "@types/file-saver": "^2.0.7",
+    "@types/node": "latest",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "typescript": "latest"
+  }
+}
