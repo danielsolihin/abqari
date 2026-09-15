@@ -2,28 +2,30 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  const path = request.nextUrl.pathname;
-  const isAuth = request.cookies.has('abqari_session');
-  const isLoginPage = path === '/login';
+  // Semak sama ada pengguna mempunyai cookie sesi ABQARI
+  const hasSession = request.cookies.has('abqari_session');
+  const { pathname } = request.nextUrl;
 
-  // Jika tiada akses dan bukan di laman login -> hantar ke /login
-  if (!isAuth && !isLoginPage) {
+  // 1. SENARAI LALUAN AWAM (Boleh diakses tanpa log masuk)
+  const publicPaths = ['/login', '/forgot-password', '/reset-password'];
+
+  // Jika laluan semasa ada dalam senarai awam, benarkan akses masuk
+  if (publicPaths.includes(pathname)) {
+    return NextResponse.next();
+  }
+
+  // 2. Jika cuba masuk Papan Pemuka/Sistem tapi tiada sesi, tendang ke /login
+  if (!hasSession) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  // Jika dah login tapi cuba buka /login -> hantar ke dashboard (/)
-  if (isAuth && isLoginPage) {
-    return NextResponse.redirect(new URL('/', request.url));
-  }
-
+  // 3. Jika semuanya okey, benarkan akses diteruskan
   return NextResponse.next();
 }
 
-// Menyediakan default export sebagai simpanan keselamatan untuk Next.js
-export default middleware;
-
+// Konfigurasi Matcher: Abaikan fail statik, imej, dan API supaya tidak disekat
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.png|.*\\.docx|.*\\.svg).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
