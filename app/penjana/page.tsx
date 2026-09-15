@@ -5,6 +5,12 @@ import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { saveAs } from 'file-saver';
 import Link from 'next/link';
+import { createClient } from '@supabase/supabase-js';
+
+// Inisialisasi Supabase Client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // --- DATA PEMETAAN ---
 const BLOOM_TAXONOMY = [
@@ -98,6 +104,15 @@ export default function PenjanaSoalanPage() {
   const [subjects, setSubjects] = useState<any[]>([]);
   const [selectedSubject, setSelectedSubject] = useState('');
 
+  // State Profil Pengguna Dinamik Supabase
+  const [userProfile, setUserProfile] = useState<{
+    name: string;
+    faculty: string;
+  }>({
+    name: 'Pengguna ABQARI',
+    faculty: 'Akademi Pengajian Islam Kontemporari (ACIS)',
+  });
+
   const [courseName, setCourseName] = useState('');
   const [courseCode, setCourseCode] = useState('');
   const [examPeriod, setExamPeriod] = useState('JULAI 2026');
@@ -108,7 +123,6 @@ export default function PenjanaSoalanPage() {
   const [subjectCOs, setSubjectCOs] = useState<string[]>([]);
   const [subjectLOs, setSubjectLOs] = useState<string[]>([]);
 
-  // PEMBETULAN TYPESCRIPT: Penambahan tatasusunan [] pada useState
   const [topicDistribution, setTopicDistribution] = useState<{name: string, percentage: string}[]>([
     { name: '', percentage: '' }
   ]);
@@ -135,6 +149,36 @@ export default function PenjanaSoalanPage() {
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState('');
 
+  // 1. Pengambilan Profil Pengguna Dinamik (Supabase Auth / LocalStorage)
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const localUser = typeof window !== 'undefined' ? localStorage.getItem('abqari_user') : null;
+
+        if (session?.user) {
+          const meta = session.user.user_metadata || {};
+          setUserProfile({
+            name: meta.full_name || meta.name || session.user.email?.split('@')[0] || 'Pengguna ABQARI',
+            faculty: meta.faculty || 'Akademi Pengajian Islam Kontemporari (ACIS)',
+          });
+        } else if (localUser) {
+          try {
+            const parsed = JSON.parse(localUser);
+            setUserProfile({
+              name: parsed.name || 'Pengguna ABQARI',
+              faculty: parsed.faculty || 'Akademi Pengajian Islam Kontemporari (ACIS)',
+            });
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.error('Ralat mengambil profil pengguna:', err);
+      }
+    };
+
+    fetchUserProfile();
+  }, []);
+
   useEffect(() => {
     fetch('/api/subjects')
       .then(res => res.json())
@@ -145,7 +189,6 @@ export default function PenjanaSoalanPage() {
     setSelectedSubject(subjectId);
     const sub = subjects.find(s => s.id === subjectId);
     if (sub) {
-      // Guna auto-format supaya nama dan kod ditarik dengan betul untuk janaan MS Word
       const formatted = formatSubjectDisplay(sub.course_code, sub.name);
       if (formatted.includes(' - ')) {
          const parts = formatted.split(' - ');
@@ -509,9 +552,11 @@ export default function PenjanaSoalanPage() {
               Sistem pintar penggubalan kertas ujian UiTM mengikut spesifikasi JSU 100%.
             </p>
           </div>
+
+          {/* NAIF: PENJURA ATAS NAMA PENGGUNA DINAMIK */}
           <div style={{ color: 'white', textAlign: 'right', fontSize: '0.85rem', marginTop: '8px' }}>
-            <strong style={{ fontSize: '0.95rem', display: 'block' }}>Prof. Dr. Ahmad Fakhruddin</strong>
-            <span style={{ color: '#cbd5e1' }}>Fakulti Pengajian Islam (FPI)</span>
+            <strong style={{ fontSize: '0.95rem', display: 'block' }}>{userProfile.name}</strong>
+            <span style={{ color: '#cbd5e1' }}>{userProfile.faculty}</span>
           </div>
         </div>
 
