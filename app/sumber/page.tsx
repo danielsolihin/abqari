@@ -2,8 +2,26 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { createClient } from '@supabase/supabase-js';
+
+// Inisialisasi Supabase Client untuk profil dinamik
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function PusatSumberPage() {
+  const searchParams = useSearchParams();
+
+  // State Profil Pengguna Dinamik Supabase
+  const [userProfile, setUserProfile] = useState<{
+    name: string;
+    faculty: string;
+  }>({
+    name: 'Pengguna ABQARI',
+    faculty: 'Akademi Pengajian Islam Kontemporari (ACIS)',
+  });
+
   // ==========================================
   // ENJIN TERAS ASAL (DARI PAPAN PEMUKA PENTADBIR)
   // ==========================================
@@ -19,6 +37,45 @@ export default function PusatSumberPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSubjectId, setFilterSubjectId] = useState('');
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
+
+  // 1. Pengambilan Profil Pengguna Dinamik (Supabase Auth / LocalStorage)
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const localUser = typeof window !== 'undefined' ? localStorage.getItem('abqari_user') : null;
+
+        if (session?.user) {
+          const meta = session.user.user_metadata || {};
+          setUserProfile({
+            name: meta.full_name || meta.name || session.user.email?.split('@')[0] || 'Pengguna ABQARI',
+            faculty: meta.faculty || 'Akademi Pengajian Islam Kontemporari (ACIS)',
+          });
+        } else if (localUser) {
+          try {
+            const parsed = JSON.parse(localUser);
+            setUserProfile({
+              name: parsed.name || 'Pengguna ABQARI',
+              faculty: parsed.faculty || 'Akademi Pengajian Islam Kontemporari (ACIS)',
+            });
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.error('Ralat mengambil profil pengguna:', err);
+      }
+    };
+
+    fetchUserProfile();
+  }, []);
+
+  // 2. Semak jika ada ID subjek dihantar dari URL (contoh: dari Pengurusan Kursus)
+  useEffect(() => {
+    const subjectIdParam = searchParams.get('subjectId');
+    if (subjectIdParam) {
+      setFilterSubjectId(subjectIdParam);
+      setSelectedSubjectId(subjectIdParam);
+    }
+  }, [searchParams]);
 
   // ==========================================
   // FUNGSI API & FETCH (DIKEKALKAN 100%)
@@ -203,7 +260,12 @@ export default function PusatSumberPage() {
              <h1 style={{ margin: '0 0 5px 0', fontSize: '2.2rem', fontWeight: '900', letterSpacing: '-0.5px' }}>Pusat Sumber (Nota AI)</h1>
              <p style={{ margin: 0, color: '#cbd5e1', fontSize: '1rem' }}>Muat naik bahan rujukan, modul, atau slaid kuliah untuk dianalisis oleh enjin ABQARI.</p>
           </div>
-          <div style={{ width: '150px' }}></div>
+          
+          {/* PAPARAN PROFIL PENGGUNA DINAMIK */}
+          <div style={{ color: 'white', textAlign: 'right', fontSize: '0.8rem' }}>
+            <strong style={{ fontSize: '0.95rem', display: 'block' }}>{userProfile.name}</strong>
+            <span style={{ opacity: 0.8 }}>{userProfile.faculty}</span>
+          </div>
         </div>
 
         {/* TIP: HANYA BOLEH UPLOAD JIKA TELAH DAFTAR DI PENGURUSAN KURSUS */}
@@ -327,7 +389,6 @@ export default function PusatSumberPage() {
                   Pilih Subjek & Pemetaan <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 
-                {/* BUTANG '+ SUBJEK BAHARU' DIBUANG DARI SINI UNTUK MENGELAK KEKELIRUAN */}
                 <select
                   style={{ ...styles.input, backgroundColor: '#f1f5f9', fontWeight: '600', color: '#0f172a' }}
                   value={selectedSubjectId}
