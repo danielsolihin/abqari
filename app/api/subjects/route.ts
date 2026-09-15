@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
+// export const dynamic = 'force-static'; // DITUKAR: Memastikan penyesuaian dengan output: 'export'
 
 // Inisialisasi sambungan ke Supabase menggunakan Environment Variables (.env)
-const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
-// Gunakan Service Role Key untuk bypass RLS (jika ada), atau Anon Key
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co').replace(/\/+$/, '');
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder';
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -108,8 +108,6 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'ID kursus diperlukan.' }, { status: 400 });
     }
 
-    // Nota: Disebabkan kita set "ON DELETE CASCADE" di dalam SQL Supabase, 
-    // jika subjek dipadam, semua rekod dokumen dan vektor berkaitan subjek ini akan turut terpadam secara automatik.
     const { error } = await supabase
       .from('subjects')
       .delete()

@@ -3,9 +3,10 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic'; // Melayan permintaan dinamik Vercel
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY });
@@ -18,23 +19,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Soalan diperlukan.' }, { status: 400 });
     }
 
-    // 1. Tukar soalan pengguna kepada vektor (dipaksa 768 dimensi) guna @google/genai
+    // 1. Tukar soalan kepada vektor (Diselaraskan dengan text-embedding-004 supaya sepadan dengan dokumen)
     const embedResponse = await ai.models.embedContent({
-      model: 'gemini-embedding-2',
+      model: 'text-embedding-004',
       contents: question,
-      config: {
-        outputDimensionality: 768,
-      },
     });
 
-    // Semak pelbagai struktur pulangan daripada SDK @google/genai
+    // Pembetulan struktur pemprosesan vektor
     const queryEmbedding =
-      embedResponse.embedding?.values ||
-      (embedResponse as any)?.values ||
-      (embedResponse as any)?.embeddings?.[0]?.values;
+      embedResponse.embeddings?.[0]?.values ||
+      (embedResponse as any)?.embedding?.values ||
+      (embedResponse as any)?.values;
 
     if (!queryEmbedding || queryEmbedding.length === 0) {
-      console.error('Struktur penuh embedResponse:', JSON.stringify(embedResponse, null, 2));
+      console.error('Struktur embedResponse:', JSON.stringify(embedResponse, null, 2));
       throw new Error('Gagal menjana vektor soalan daripada Gemini API.');
     }
 
@@ -57,7 +55,7 @@ export async function POST(req: NextRequest) {
       : 'Tiada perenggan relevan ditemui dalam pangkalan data.';
 
     // 4. Bina prompt RAG untuk Gemini
-    const prompt = `Anda ialah pembantu AI yang membantu menjawab soalan berdasarkan dokumen yang dimuat naik.
+    const prompt = `Anda ialah pembantu AI ABQARI yang membantu menjawab soalan berdasarkan dokumen yang dimuat naik.
 Sila jawab soalan di bawah berdasarkan KONTEKS yang diberikan sahaja. Jika jawapan tiada dalam konteks, nyatakan bahawa anda tidak menemui maklumat tersebut dalam dokumen.
 
 KONTEKS DOKUMEN:
@@ -66,15 +64,15 @@ ${contextText}
 SOALAN:
 ${question}`;
 
-    // 5. Jana jawapan akhir menggunakan Gemini 3.6 Flash (Model Terkini)
+    // 5. Jana jawapan akhir menggunakan Gemini Flash
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
     });
 
     return NextResponse.json({
       success: true,
-      answer: response.text,
+      answer: response.text || 'Tiada jawapan dapat dijana.',
       sources: matchedChunks || [],
     });
   } catch (error: any) {

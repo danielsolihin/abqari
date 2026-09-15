@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic'; // Memastikan enjin API serverless berjalan live di Vercel
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -63,7 +64,11 @@ export async function POST(req: NextRequest) {
         model: 'text-embedding-004',
         contents: `${queryTopicText} ${THEME_KEYWORDS[theme] || ''}`,
       });
-      const queryVector = queryEmbedResponse.embedding?.values;
+
+      const queryVector =
+        queryEmbedResponse.embeddings?.[0]?.values ||
+        (queryEmbedResponse as any)?.embedding?.values ||
+        (queryEmbedResponse as any)?.values;
 
       if (queryVector) {
         // Kira Cosine Similarity untuk setiap chunk dan susun mengikut skor tertinggi
@@ -196,7 +201,7 @@ SKEMA JAWAPAN TAMAT
 `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
     });
 

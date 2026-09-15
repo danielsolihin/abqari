@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 
 // Inisialisasi Supabase Client
@@ -10,6 +11,9 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function DashboardUtama() {
+  const router = useRouter();
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [loginTime, setLoginTime] = useState<Date | null>(null);
@@ -30,26 +34,52 @@ export default function DashboardUtama() {
   const [stats, setStats] = useState({ subjects: 0, docs: 0, archives: 0 });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-  // 1. Pengambilan Profil Pengguna Sebenar dari Supabase Session
+  // 1. KAWALAN KESELAMATAN (AUTH GUARD) & PENGAMBILAN PROFIL
   useEffect(() => {
-    const fetchUserProfile = async () => {
+    const checkAuthAndFetchProfile = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const meta = user.user_metadata || {};
+        // Semak sesi Supabase & Simpanan Tempatan
+        const { data: { session } } = await supabase.auth.getSession();
+        const userCookie = typeof document !== 'undefined' && document.cookie.includes('abqari_session=');
+        const localUser = typeof window !== 'undefined' ? localStorage.getItem('abqari_user') : null;
+
+        // JIKA TIADA SESI: Alih hala terus ke /login
+        if (!session && !userCookie && !localUser) {
+          router.push('/login');
+          return;
+        }
+
+        // JIKA ADA SESI: Kemas kini profil pengguna
+        if (session?.user) {
+          const meta = session.user.user_metadata || {};
           setUserProfile({
-            name: meta.full_name || meta.name || user.email?.split('@')[0] || 'Prof. Dr. Ahmad Fakhruddin',
-            faculty: meta.faculty || 'Fakulti Pengajian Islam (FPI)',
+            name: meta.full_name || meta.name || session.user.email?.split('@')[0] || 'Prof. Dr. Ahmad Fakhruddin',
+            faculty: meta.faculty || 'Akademi Pengajian Islam Kontemporari (ACIS)',
             avatarUrl: meta.avatar_url || null,
           });
+        } else if (localUser) {
+          try {
+            const parsed = JSON.parse(localUser);
+            setUserProfile({
+              name: parsed.name || 'Prof. Dr. Ahmad Fakhruddin',
+              faculty: parsed.faculty || 'Akademi Pengajian Islam Kontemporari (ACIS)',
+              avatarUrl: parsed.avatarUrl || null,
+            });
+          } catch {
+            // Pengendalian sekiranya ralat parsing
+          }
         }
+
+        // Selesai semakan pengesahan
+        setIsCheckingAuth(false);
       } catch (err) {
-        console.error('Ralat mengambil profil pengguna:', err);
+        console.error('Ralat mengesahkan sesi pengguna:', err);
+        router.push('/login');
       }
     };
 
-    fetchUserProfile();
-  }, []);
+    checkAuthAndFetchProfile();
+  }, [router]);
 
   // 2. Pengisian Masa & Jam Sesi Real-Time
   useEffect(() => {
@@ -112,7 +142,6 @@ export default function DashboardUtama() {
     reader.onloadend = async () => {
       const base64Image = reader.result as string;
 
-      // Kemas kini avatar di dalam Metadata Supabase Auth
       const { error } = await supabase.auth.updateUser({
         data: { avatar_url: base64Image }
       });
@@ -128,7 +157,7 @@ export default function DashboardUtama() {
     reader.readAsDataURL(file);
   };
 
-  // Fungsi Menjana Inisial Nama (cth: AF)
+  // Fungsi Menjana Inisial Nama
   const getInitials = (name: string) => {
     if (!name) return 'AF';
     const cleanName = name.replace(/(Prof\.|Dr\.|Ir\.|Hj\.|Hjh\.|Dato'|Datin)/gi, '').trim();
@@ -150,9 +179,33 @@ export default function DashboardUtama() {
     } catch (error) {
       console.error('Ralat log keluar:', error);
     }
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('abqari_user');
+      sessionStorage.removeItem('abqari_user');
+    }
     document.cookie = "abqari_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax";
-    window.location.href = '/login';
+    router.push('/login');
   };
+
+  // PAPARAN SKRIN SEJANTAN MEMUATKAN APABILA SAKSI SESI DIPROSES
+  if (isCheckingAuth) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh', 
+        backgroundColor: '#3b0764', 
+        color: 'white',
+        fontFamily: '"Inter", "Segoe UI", sans-serif'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <h2 style={{ color: '#fde047', fontSize: '2rem', margin: '0 0 10px 0', letterSpacing: '-0.5px' }}>ABQARI</h2>
+          <p style={{ margin: 0, fontSize: '0.9rem', opacity: 0.8 }}>Mengesahkan sesi pengguna...</p>
+        </div>
+      </div>
+    );
+  }
 
   const styles = {
     page: { backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '"Inter", "Segoe UI", sans-serif', position: 'relative' as 'relative' },
@@ -310,7 +363,7 @@ export default function DashboardUtama() {
               </button>
             </div>
             
-            {/* BULATAN AVATAR PROFIL (KLIK UNTUK MUAT NAIK GAMBAR) */}
+            {/* BULATAN AVATAR PROFIL */}
             <div 
               onClick={() => document.getElementById('avatar-file-input')?.click()}
               style={{ 

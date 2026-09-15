@@ -108,7 +108,8 @@ export default function PenjanaSoalanPage() {
   const [subjectCOs, setSubjectCOs] = useState<string[]>([]);
   const [subjectLOs, setSubjectLOs] = useState<string[]>([]);
 
-  const [topicDistribution, setTopicDistribution] = useState<{name: string, percentage: string}>([
+  // PEMBETULAN TYPESCRIPT: Penambahan tatasusunan [] pada useState
+  const [topicDistribution, setTopicDistribution] = useState<{name: string, percentage: string}[]>([
     { name: '', percentage: '' }
   ]);
 
@@ -269,6 +270,24 @@ export default function PenjanaSoalanPage() {
     printWindow.document.close();
   };
 
+  const fallbackCopy = (text: string) => {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-999999px";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      alert('Gagal menyalin teks.');
+    }
+    document.body.removeChild(textArea);
+  };
+
   const handleCopy = () => {
     const fullText = (generatedQuestions || '') + '\n\n\n' + (generatedScheme || '');
     if (!fullText.trim()) return;
@@ -276,7 +295,6 @@ export default function PenjanaSoalanPage() {
       navigator.clipboard.writeText(fullText).then(() => { setIsCopied(true); setTimeout(() => setIsCopied(false), 2000); }).catch(() => fallbackCopy(fullText));
     } else fallbackCopy(fullText);
   };
-  const fallbackCopy = (text: string) => { /* fallback func */ };
 
   const handleDownloadQuestionWord = async () => {
     if (!generatedQuestions) return;

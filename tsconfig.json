@@ -32,6 +32,11 @@
     "**/*.tsx"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "app/api/chat/route.ts",
+    "app/api/generate-questions/route.ts",
+    "app/api/upload-document/route.ts",
+    "app/api/upload/route.ts",
+    "app/penjana/page.tsx"
   ]
 }

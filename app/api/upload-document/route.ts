@@ -3,9 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
-
-// Gunakan require untuk menyokong modul CommonJS pdf-parse di Turbopack
-const pdfParse = require('pdf-parse');
+// export const dynamic = 'force-static';
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -13,7 +11,6 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY });
 
-// Fungsi memecahkan teks kepada cebisan (Chunking)
 function splitTextIntoChunks(text: string, chunkSize = 800, overlap = 100): string[] {
   const cleanedText = text.replace(/\s+/g, ' ').trim();
   const chunks: string[] = [];
@@ -29,6 +26,9 @@ function splitTextIntoChunks(text: string, chunkSize = 800, overlap = 100): stri
 
 export async function POST(req: NextRequest) {
   try {
+    // LAZY LOADING: Panggil pdf-parse di dalam POST untuk elak ralat DOMMatrix semasa build
+    const pdfParse = require('pdf-parse');
+
     const formData = await req.formData();
     const file = formData.get('file') as File;
     const subjectId = formData.get('subjectId') as string;
@@ -37,12 +37,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Fail PDF dan ID Subjek diperlukan.' }, { status: 400 });
     }
 
-    // 1. Baca kandungan fail PDF
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     
-    // Pengendalian fungsi parser yang selamat dari isu import ESM/CJS
-    const parsePdf = typeof pdfParse === 'function' ? pdfParse : pdfParse.default;
+    const parsePdf = typeof pdfParse === 'function' ? pdfParse : (pdfParse.default || pdfParse);
     const pdfData = await parsePdf(buffer);
     const extractedText = pdfData.text;
 
@@ -50,7 +48,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Gagal mengekstrak teks daripada fail PDF ini.' }, { status: 400 });
     }
 
-    // 2. Simpan rekod dokumen utama ke jadual 'documents'
     const { data: docRecord, error: docError } = await supabase
       .from('documents')
       .insert([
@@ -65,10 +62,7 @@ export async function POST(req: NextRequest) {
 
     if (docError) throw docError;
 
-    // 3. Pecahkan teks kepada Chunks
     const textChunks = splitTextIntoChunks(extractedText);
-
-    // 4. Jana Vector Embeddings menggunakan Gemini & Simpan ke 'document_chunks'
     const chunkRecords = [];
 
     for (let i = 0; i < textChunks.length; i++) {
@@ -80,7 +74,12 @@ export async function POST(req: NextRequest) {
           model: 'text-embedding-004',
           contents: chunkText,
         });
-        embeddingVector = embedResponse.embedding?.values || null;
+
+        embeddingVector =
+          embedResponse.embeddings?.[0]?.values ||
+          (embedResponse as any)?.embedding?.values ||
+          (embedResponse as any)?.values ||
+          null;
       } catch (err) {
         console.warn(`Amaran: Gagal jana embedding untuk chunk ${i}:`, err);
       }
@@ -93,7 +92,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Simpan kesemua chunks ke Supabase
     const { error: chunkError } = await supabase
       .from('document_chunks')
       .insert(chunkRecords);
@@ -112,7 +110,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET: Ambil senarai dokumen mengikut Subjek
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
