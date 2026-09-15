@@ -152,19 +152,22 @@ ${topicList}
 Tugas anda adalah menjana ISI KANDUNGAN SOALAN untuk SET SOALAN ${setSoalan} dan SKEMA JAWAPAN sahaja. JANGAN jana maklumat "Header".
 
 ==================================================
-HIRARKI KEUTAMAAN MUTLAK (WAJIB DIPATUHI WALAUPUN APA JUA KEADAAN):
+HIRARKI KEUTAMAAN MUTLAK & RESHUFFLE ARAS BLOOM:
 ==================================================
 
-KEUTAMAAN #1 (MUTLAK & TERTINGGI - KUOTA ARAS BLOOM TEPAT 100%):
-Anda WAJIB memastikan JUMLAH KESELURUHAN TAG [Aras: CX] di dalam kertas soalan ini TEPAT KETAT sepadan dengan sasaran nombor di bawah. DILARANG SAMA SEKALI LEBIH ATAU KURANG!
-- Aras [Aras: C1] (Pengetahuan) : WAJIB TEPAT ${bloomCounts.C1} soalan (Tepat ${bloomCounts.C1} tag sahaja!)
-- Aras [Aras: C2] (Pemahaman)   : WAJIB TEPAT ${bloomCounts.C2} soalan (Tepat ${bloomCounts.C2} tag sahaja!)
-- Aras [Aras: C3] (Aplikasi)    : WAJIB TEPAT ${bloomCounts.C3} soalan (Tepat ${bloomCounts.C3} tag sahaja!)
-- Aras [Aras: C4] (Analisis)    : WAJIB TEPAT ${bloomCounts.C4} soalan (Tepat ${bloomCounts.C4} tag sahaja!)
-- Aras [Aras: C5] (Sintesis)    : WAJIB TEPAT ${bloomCounts.C5} soalan (Tepat ${bloomCounts.C5} tag sahaja!)
-- Aras [Aras: C6] (Penilaian)   : WAJIB TEPAT ${bloomCounts.C6} soalan (Tepat ${bloomCounts.C6} tag sahaja!)
+KEUTAMAAN #1 (KUOTA ARAS BLOOM & SUSUNAN RAWAK / RESHUFFLE):
+1. KUOTA TEPAT 100%: Anda WAJIB memastikan JUMLAH KESELURUHAN TAG [Aras: CX] TEPAT KETAT sepadan dengan sasaran nombor di bawah:
+   - Aras [Aras: C1] (Pengetahuan) : WAJIB TEPAT ${bloomCounts.C1} soalan
+   - Aras [Aras: C2] (Pemahaman)   : WAJIB TEPAT ${bloomCounts.C2} soalan
+   - Aras [Aras: C3] (Aplikasi)    : WAJIB TEPAT ${bloomCounts.C3} soalan
+   - Aras [Aras: C4] (Analisis)    : WAJIB TEPAT ${bloomCounts.C4} soalan
+   - Aras [Aras: C5] (Sintesis)    : WAJIB TEPAT ${bloomCounts.C5} soalan
+   - Aras [Aras: C6] (Penilaian)   : WAJIB TEPAT ${bloomCounts.C6} soalan
 
-PENTING: Sebelum mencetak jawapan akhir, kira semula jumlah tag [Aras: CX] anda supaya nisbahnya 100% tepat mengikut sasaran angka di atas.
+2. ARAHAN RESHUFFLE (SUSUNAN RAWAK & BERSERTAAN):
+   - DILARANG SAMA SEKALI menyusun aras soalan secara berkelompok berturutan (seperti mengumpul semua C1 dari soalan 1-10, kemudian C2 dari soalan 11-20).
+   - Anda WAJIB MENGACAK / MERAWAKKAN (RESHUFFLE) taburan aras Bloom secara dinamik sepanjang kertas soalan (contohnya: Soalan 1 [Aras: C2], Soalan 2 [Aras: C4], Soalan 3 [Aras: C1], Soalan 4 [Aras: C3]...).
+   - Walau bagaimanapun, pastikan jumlah keseluruhan tag bagi setiap aras di AKHIR PENJANAAN adalah TEPAT 100% seperti nisbah kuota di atas.
 
 KEUTAMAAN #2 (JUMLAH & STRUKTUR BAHAGIAN SOALAN):
 1. JIKA sesuatu format (Bahagian A, B, atau C) TIDAK DIMINTA di dalam arahan "FORMAT SOALAN YANG DIKEHENDAKI" di bawah, DILARANG mewujudkannya.
