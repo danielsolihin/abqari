@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+// KUNCI UTAMA: Mematikan cache Next.js supaya senarai sentiasa segar (live)
+export const dynamic = 'force-dynamic'; 
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -80,7 +83,7 @@ export async function POST(req: Request) {
           course_code: courseCode || 'TIADA',
           co: co || [],
           lo: lo || [],
-          user_id: user.id, // Menyimpan ID pemunya subjek
+          user_id: user.id,
         },
       ])
       .select()
