@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 
@@ -153,7 +154,9 @@ export default function LoginPage() {
               <div style={{ marginBottom: '30px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                   <label style={{ fontSize: '0.85rem', fontWeight: '700', color: '#475569' }}>Kata Laluan</label>
-                  <a href="#" style={{ fontSize: '0.75rem', color: '#3b82f6', textDecoration: 'none', fontWeight: '600' }}>Lupa laluan?</a>
+                  <Link href="/forgot-password" style={{ fontSize: '0.75rem', color: '#3b82f6', textDecoration: 'none', fontWeight: '600' }}>
+                    Lupa laluan?
+                  </Link>
                 </div>
                 <div style={{ position: 'relative' }}>
                   <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }}>🔑</span>
@@ -185,7 +188,7 @@ export default function LoginPage() {
           </div>
 
           <div style={{ textAlign: 'center', marginTop: '30px', fontSize: '0.8rem', color: '#64748b' }}>
-            &copy; 2026 Hak Cipta Terpelihara. ACIS Universiti Teknologi MARA.<br/>
+            &copy; {new Date().getFullYear()} Hak Cipta Terpelihara. ACIS Universiti Teknologi MARA.<br/>
             Sistem ABQARI Versi 1.0 (Prototaip)
           </div>
 
