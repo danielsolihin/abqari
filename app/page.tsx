@@ -38,18 +38,15 @@ export default function DashboardUtama() {
   useEffect(() => {
     const checkAuthAndFetchProfile = async () => {
       try {
-        // Semak sesi Supabase & Simpanan Tempatan
         const { data: { session } } = await supabase.auth.getSession();
         const userCookie = typeof document !== 'undefined' && document.cookie.includes('abqari_session=');
         const localUser = typeof window !== 'undefined' ? localStorage.getItem('abqari_user') : null;
 
-        // JIKA TIADA SESI: Alih hala terus ke /login
         if (!session && !userCookie && !localUser) {
           router.push('/login');
           return;
         }
 
-        // JIKA ADA SESI: Kemas kini profil pengguna
         if (session?.user) {
           const meta = session.user.user_metadata || {};
           setUserProfile({
@@ -70,7 +67,6 @@ export default function DashboardUtama() {
           }
         }
 
-        // Selesai semakan pengesahan
         setIsCheckingAuth(false);
       } catch (err) {
         console.error('Ralat mengesahkan sesi pengguna:', err);
@@ -127,7 +123,7 @@ export default function DashboardUtama() {
     fetchRealStats();
   }, []);
 
-  // Pengendali Muat Naik Gambar Profil (Avatar)
+  // Pengendali Muat Naik Gambar Profil (Diselaraskan dengan Supabase Storage Bucket 'AVATARS')
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -138,26 +134,55 @@ export default function DashboardUtama() {
     }
 
     setIsUploadingAvatar(true);
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64Image = reader.result as string;
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `avatar_${Date.now()}.${fileExt}`;
+      const filePath = `public/${fileName}`;
 
-      const { error } = await supabase.auth.updateUser({
-        data: { avatar_url: base64Image }
+      // 1. Muat naik ke Supabase Storage Bucket 'AVATARS'
+      const { error: uploadError } = await supabase.storage
+        .from('AVATARS')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // 2. Ambil Public URL
+      const { data: publicUrlData } = supabase.storage
+        .from('AVATARS')
+        .getPublicUrl(filePath);
+
+      const publicUrl = publicUrlData.publicUrl;
+
+      // 3. Kemas kini user metadata di Supabase Auth jika ada sesi
+      await supabase.auth.updateUser({
+        data: { avatar_url: publicUrl }
       });
 
-      if (!error) {
-        setUserProfile(prev => ({ ...prev, avatarUrl: base64Image }));
-      } else {
-        console.error('Gagal mengemas kini avatar:', error);
-        alert('Gagal memuat naik gambar profil.');
-      }
+      // 4. Kemas kini state tempatan & LocalStorage
+      setUserProfile(prev => {
+        const updated = { ...prev, avatarUrl: publicUrl };
+        if (typeof window !== 'undefined') {
+          const localUser = localStorage.getItem('abqari_user');
+          if (localUser) {
+            try {
+              const parsed = JSON.parse(localUser);
+              parsed.avatarUrl = publicUrl;
+              localStorage.setItem('abqari_user', JSON.stringify(parsed));
+            } catch (err) {}
+          }
+        }
+        return updated;
+      });
+
+      alert('Alhamdulillah! Gambar profil berjaya dikemas kini.');
+    } catch (err: any) {
+      console.error('Gagal mengemas kini avatar:', err);
+      alert(`Gagal memuat naik gambar profil: ${err.message || 'Ralat muat naik.'}`);
+    } finally {
       setIsUploadingAvatar(false);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
-  // Fungsi Menjana Inisial Nama
   const getInitials = (name: string) => {
     if (!name) return 'AF';
     const cleanName = name.replace(/(Prof\.|Dr\.|Ir\.|Hj\.|Hjh\.|Dato'|Datin)/gi, '').trim();
@@ -187,7 +212,6 @@ export default function DashboardUtama() {
     router.push('/login');
   };
 
-  // PAPARAN SKRIN SEJANTAN MEMUATKAN APABILA SAKSI SESI DIPROSES
   if (isCheckingAuth) {
     return (
       <div style={{ 
@@ -487,7 +511,7 @@ export default function DashboardUtama() {
 
         {/* FOOTER */}
         <div style={{ marginTop: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>
-          <p>© {new Date().getFullYear()} ABQARI. Hak Cipta Terpelihara. Universiti Teknologi MARA (UiTM).</p>
+          <p>© {new Date().getFullYear()} ABQARI. Hak Cipta Terpelihara. ACIS, Universiti Teknologi MARA (UiTM).</p>
         </div>
 
       </div>
