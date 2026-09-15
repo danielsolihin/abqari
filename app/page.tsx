@@ -123,7 +123,7 @@ export default function DashboardUtama() {
     fetchRealStats();
   }, []);
 
-  // Pengendali Muat Naik Gambar Profil (Diselaraskan dengan Supabase Storage Bucket 'AVATARS')
+  // Pengendali Muat Naik Gambar Profil (Menggunakan ID bucket 'avatars' huruf kecil)
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -139,16 +139,16 @@ export default function DashboardUtama() {
       const fileName = `avatar_${Date.now()}.${fileExt}`;
       const filePath = `public/${fileName}`;
 
-      // 1. Muat naik ke Supabase Storage Bucket 'AVATARS'
+      // 1. Muat naik ke Supabase Storage Bucket 'avatars' (huruf kecil)
       const { error: uploadError } = await supabase.storage
-        .from('AVATARS')
+        .from('avatars')
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
       // 2. Ambil Public URL
       const { data: publicUrlData } = supabase.storage
-        .from('AVATARS')
+        .from('avatars')
         .getPublicUrl(filePath);
 
       const publicUrl = publicUrlData.publicUrl;
@@ -511,7 +511,7 @@ export default function DashboardUtama() {
 
         {/* FOOTER */}
         <div style={{ marginTop: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>
-          <p>© {new Date().getFullYear()} ABQARI. Hak Cipta Terpelihara. ACIS, Universiti Teknologi MARA (UiTM).</p>
+          <p>© {new Date().getFullYear()} ABQARI. Hak Cipta Terpelihara. Universiti Teknologi MARA (UiTM).</p>
         </div>
 
       </div>
