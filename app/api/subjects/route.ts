@@ -1,112 +1,82 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-export const runtime = 'nodejs';
-// export const dynamic = 'force-static'; // DITUKAR: Memastikan penyesuaian dengan output: 'export'
-
-// Inisialisasi sambungan ke Supabase menggunakan Environment Variables (.env)
-const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co').replace(/\/+$/, '');
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// ==========================================
-// 1. GET: AMBIL SENARAI SEMUA SUBJEK
-// ==========================================
+// 1. Ambil senarai subjek (GET)
 export async function GET() {
   try {
     const { data, error } = await supabase
       .from('subjects')
       .select('*')
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: false });
 
     if (error) throw error;
-
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
-    console.error('Ralat GET Subjects:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
-// ==========================================
-// 2. POST: DAFTAR SUBJEK BAHARU
-// ==========================================
-export async function POST(req: NextRequest) {
+// 2. Tambah subjek baharu (POST)
+export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { name, courseCode, co, lo } = body;
 
-    if (!name) {
-      return NextResponse.json({ success: false, error: 'Nama kursus diperlukan.' }, { status: 400 });
-    }
-
     const { data, error } = await supabase
       .from('subjects')
       .insert([
-        { 
-          name: name, 
-          course_code: courseCode || 'TIADA', 
-          co: co || [], 
-          lo: lo || [] 
-        }
+        {
+          name,
+          course_code: courseCode || 'TIADA',
+          co: co || [],
+          lo: lo || [],
+        },
       ])
       .select()
       .single();
 
     if (error) throw error;
-
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
-    console.error('Ralat POST Subject:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
-// ==========================================
-// 3. PUT: KEMAS KINI MAKLUMAT SUBJEK (EDIT)
-// ==========================================
-export async function PUT(req: NextRequest) {
+// 3. Kemas kini subjek (PUT)
+export async function PUT(req: Request) {
   try {
     const body = await req.json();
     const { id, name, courseCode, co, lo } = body;
 
-    if (!id || !name) {
-      return NextResponse.json({ success: false, error: 'ID dan Nama kursus diperlukan.' }, { status: 400 });
-    }
-
     const { data, error } = await supabase
       .from('subjects')
-      .update({ 
-        name: name, 
-        course_code: courseCode || 'TIADA', 
-        co: co || [], 
-        lo: lo || [] 
+      .update({
+        name,
+        course_code: courseCode || 'TIADA',
+        co: co || [],
+        lo: lo || [],
       })
       .eq('id', id)
       .select()
       .single();
 
     if (error) throw error;
-
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
-    console.error('Ralat PUT Subject:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
-// ==========================================
-// 4. DELETE: PADAM SUBJEK
-// ==========================================
-export async function DELETE(req: NextRequest) {
+// 4. Padam subjek (DELETE)
+export async function DELETE(req: Request) {
   try {
     const body = await req.json();
     const { id } = body;
-
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'ID kursus diperlukan.' }, { status: 400 });
-    }
 
     const { error } = await supabase
       .from('subjects')
@@ -114,10 +84,8 @@ export async function DELETE(req: NextRequest) {
       .eq('id', id);
 
     if (error) throw error;
-
-    return NextResponse.json({ success: true, message: 'Subjek berjaya dipadamkan.' });
+    return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error('Ralat DELETE Subject:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
