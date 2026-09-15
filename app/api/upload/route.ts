@@ -93,6 +93,11 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
+    // ==========================================
+    // PEMBERSIHAN TEKS (Membaiki ralat Unicode di Supabase)
+    // ==========================================
+    extractedText = extractedText.replace(/\u0000/g, '').replace(/\\u0000/g, '');
+
     const { data: docData, error: docError } = await supabase
       .from('documents')
       .insert([{ 
@@ -111,7 +116,6 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
 
-      // DITUKAR: NAMA MODEL YANG BETUL (gemini-embedding-001)
       const embedResponse = await ai.models.embedContent({
         model: 'gemini-embedding-001',
         contents: chunk,
