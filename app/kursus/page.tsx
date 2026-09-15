@@ -57,11 +57,9 @@ const formatSubjectDisplay = (code: string, name: string) => {
   let c = code && code !== 'TIADA' ? code.trim() : '';
   let n = name ? name.trim() : '';
 
-  // Jika user terbalik letak "Nama - Kod" di dalam ruang Nama Kursus semasa mendaftar
   if (!c && n.includes(' - ')) {
     const parts = n.split(' - ');
     const lastPart = parts[parts.length - 1].trim();
-    // Mengesan jika bahagian belakang kelihatan seperti kod (cth: ISH151)
     if (/^[a-zA-Z]{2,4}\d{3,4}$/.test(lastPart)) {
       c = lastPart.toUpperCase();
       n = parts.slice(0, -1).join(' - ').trim();
@@ -69,7 +67,6 @@ const formatSubjectDisplay = (code: string, name: string) => {
   }
 
   if (c) {
-    // Memastikan kod tidak berulang jika ia sudah ditulis di dalam nama
     const cleanName = n.replace(new RegExp(`^${c}\\s*[-:]*\\s*`, 'i'), '');
     return `${c} - ${cleanName}`;
   }
@@ -96,6 +93,12 @@ export default function PengurusanKursusPage() {
   const [selectedCOs, setSelectedCOs] = useState<string[]>([]);
   const [selectedLOs, setSelectedLOs] = useState<string[]>([]);
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
+
+  // Pembantu untuk mendapatkan Token Pengesahan Sesi Supabase
+  const getAuthHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+  };
 
   // Pengambilan Profil Pengguna Dinamik (Supabase Auth / LocalStorage)
   useEffect(() => {
@@ -129,7 +132,10 @@ export default function PengurusanKursusPage() {
 
   const fetchSubjects = async () => {
     try {
-      const res = await fetch('/api/subjects');
+      const authHeaders = await getAuthHeaders();
+      const res = await fetch('/api/subjects', {
+        headers: { ...authHeaders }
+      });
       const json = await res.json();
       if (json.success) setSubjects(json.data);
     } catch (error) {
@@ -173,7 +179,7 @@ export default function PengurusanKursusPage() {
     setEditingSubjectId(null);
   };
 
-  // FUNGSI SIMPAN
+  // FUNGSI SIMPAN (DIKEMAS KINI DENGAN HEADER AUTH)
   const handleSaveSubject = async () => {
     if (!newSubjectName.trim()) return alert('Sila masukkan nama subjek.');
     
@@ -187,9 +193,13 @@ export default function PengurusanKursusPage() {
         lo: selectedLOs
       };
 
+      const authHeaders = await getAuthHeaders();
       const res = await fetch('/api/subjects', {
         method: method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...authHeaders
+        },
         body: JSON.stringify(payload), 
       });
       const json = await res.json();
@@ -213,16 +223,20 @@ export default function PengurusanKursusPage() {
     }
   };
 
-  // FUNGSI PADAM SUBJEK
+  // FUNGSI PADAM SUBJEK (DIKEMAS KINI DENGAN HEADER AUTH)
   const handleDeleteSubject = async () => {
     if (!editingSubjectId) return;
     
     if (!confirm('AMARAN: Adakah anda pasti mahu memadam subjek ini beserta tetapan pemetaannya?\n\nTindakan ini tidak boleh dipulihkan.')) return;
 
     try {
+      const authHeaders = await getAuthHeaders();
       const res = await fetch('/api/subjects', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...authHeaders
+        },
         body: JSON.stringify({ id: editingSubjectId }),
       });
       const json = await res.json();
@@ -266,7 +280,6 @@ export default function PengurusanKursusPage() {
       fontSize: '0.8rem', fontWeight: isChecked ? '700' : '500', color: isChecked ? '#3b0764' : '#475569', transition: 'all 0.15s'
     }),
     
-    // GAYA ITEM SENARAI SUBJEK BAHARU
     subjectCardItem: (isSelected: boolean) => ({
       padding: '10px 12px',
       borderRadius: '8px',
@@ -311,7 +324,7 @@ export default function PengurusanKursusPage() {
         {/* 2 LAJUR REKA BENTUK PENGURUSAN */}
         <div style={styles.gridContainer}>
 
-          {/* LAJUR KIRI: DIPECAHKAN KEPADA DUA KOTAK BERASINGAN (FLEX COLUMN) */}
+          {/* LAJUR KIRI: DIPECAHKAN KEPADA DUA KOTAK BERASINGAN */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
             
             {/* KOTAK 1: SELEKSI & PENDAFTARAN SUBJEK */}
@@ -350,14 +363,13 @@ export default function PengurusanKursusPage() {
                 </div>
               </div>
 
-              {/* TIP DIKEKALKAN DI DALAM KOTAK 1 SEPERTI DIMINTA */}
               <div style={{ backgroundColor: '#eff6ff', padding: '12px 15px', borderRadius: '8px', borderLeft: '4px solid #3b82f6', fontSize: '0.8rem', color: '#1e40af' }}>
                 <strong>💡 Langkah Seterusnya:</strong><br />
                 Sila lengkapkan pemetaan Domain di kotak sebelah kanan, kemudian tekan butang <strong>Simpan</strong> di bahagian bawah.
               </div>
             </div>
 
-            {/* KOTAK BAHARU TERASING: SENARAI SUBJEK BERDAFTAR */}
+            {/* KOTAK 2: SENARAI SUBJEK BERDAFTAR */}
             <div style={styles.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px', marginBottom: '15px' }}>
                 <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.05rem', fontWeight: '800', textTransform: 'uppercase' }}>
