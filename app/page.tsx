@@ -47,12 +47,20 @@ export default function DashboardUtama() {
           return;
         }
 
+        let localAvatarUrl: string | null = null;
+        if (localUser) {
+          try {
+            const parsedLocal = JSON.parse(localUser);
+            localAvatarUrl = parsedLocal.avatarUrl || null;
+          } catch (e) {}
+        }
+
         if (session?.user) {
           const meta = session.user.user_metadata || {};
           setUserProfile({
             name: meta.full_name || meta.name || session.user.email?.split('@')[0] || 'Prof. Dr. Ahmad Fakhruddin',
             faculty: meta.faculty || 'Akademi Pengajian Islam Kontemporari (ACIS)',
-            avatarUrl: meta.avatar_url || null,
+            avatarUrl: meta.avatar_url || localAvatarUrl || null,
           });
         } else if (localUser) {
           try {
@@ -123,7 +131,7 @@ export default function DashboardUtama() {
     fetchRealStats();
   }, []);
 
-  // Pengendali Muat Naik Gambar Profil (Menggunakan ID bucket 'avatars' huruf kecil)
+  // Pengendali Muat Naik Gambar Profil (Diselaraskan dengan Supabase Bucket 'avatars' & Simpanan Tempatan)
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -139,7 +147,7 @@ export default function DashboardUtama() {
       const fileName = `avatar_${Date.now()}.${fileExt}`;
       const filePath = `public/${fileName}`;
 
-      // 1. Muat naik ke Supabase Storage Bucket 'avatars' (huruf kecil)
+      // 1. Muat naik ke Supabase Storage Bucket 'avatars'
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file, { upsert: true });
@@ -158,18 +166,23 @@ export default function DashboardUtama() {
         data: { avatar_url: publicUrl }
       });
 
-      // 4. Kemas kini state tempatan & LocalStorage
+      // 4. Kemas kini state tempatan & LocalStorage (Penyimpanan Kekal)
       setUserProfile(prev => {
         const updated = { ...prev, avatarUrl: publicUrl };
         if (typeof window !== 'undefined') {
-          const localUser = localStorage.getItem('abqari_user');
-          if (localUser) {
-            try {
-              const parsed = JSON.parse(localUser);
-              parsed.avatarUrl = publicUrl;
-              localStorage.setItem('abqari_user', JSON.stringify(parsed));
-            } catch (err) {}
-          }
+          const existingUser = localStorage.getItem('abqari_user');
+          let parsedUser = {};
+          try {
+            parsedUser = existingUser ? JSON.parse(existingUser) : {};
+          } catch (err) {}
+
+          const newUserData = {
+            ...parsedUser,
+            name: prev.name,
+            faculty: prev.faculty,
+            avatarUrl: publicUrl
+          };
+          localStorage.setItem('abqari_user', JSON.stringify(newUserData));
         }
         return updated;
       });
