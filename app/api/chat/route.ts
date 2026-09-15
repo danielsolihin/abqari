@@ -19,10 +19,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Soalan diperlukan.' }, { status: 400 });
     }
 
-    // 1. Tukar soalan kepada vektor (Diselaraskan dengan text-embedding-004 supaya sepadan dengan dokumen)
+    // 1. Tukar soalan kepada vektor (Dikemas kini ke gemini-embedding-001 dengan 768 dimensi)
     const embedResponse = await ai.models.embedContent({
-      model: 'text-embedding-004',
+      model: 'gemini-embedding-001',
       contents: question,
+      config: {
+        outputDimensionality: 768,
+      },
     });
 
     // Pembetulan struktur pemprosesan vektor
@@ -64,9 +67,9 @@ ${contextText}
 SOALAN:
 ${question}`;
 
-    // 5. Jana jawapan akhir menggunakan Gemini Flash
+    // 5. Jana jawapan akhir menggunakan Gemini 3.6 Flash
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: prompt,
     });
 
