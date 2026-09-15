@@ -18,7 +18,7 @@ export default function DashboardUtama() {
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [loginTime, setLoginTime] = useState<Date | null>(null);
 
-  // State Profil Pengguna Dinamik (Ditambah: role)
+  // State Profil Pengguna Dinamik
   const [userProfile, setUserProfile] = useState<{
     name: string;
     faculty: string;
@@ -32,7 +32,7 @@ export default function DashboardUtama() {
   });
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
-  // Modal Tetapan Profil & Kata Laluan
+  // Modal Tetapan Profil
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [editName, setEditName] = useState('');
   const [editFaculty, setEditFaculty] = useState('');
@@ -70,7 +70,7 @@ export default function DashboardUtama() {
             name: meta.full_name || meta.name || session.user.email?.split('@')[0] || 'Pengguna ABQARI',
             faculty: meta.faculty || 'Fakulti Pengajian',
             avatarUrl: meta.avatar_url || localAvatarUrl || null,
-            role: meta.role || 'pensyarah', // Tarik level peranan
+            role: meta.role || 'pensyarah',
           });
         } else if (localUser) {
           try {
@@ -100,28 +100,31 @@ export default function DashboardUtama() {
     return () => clearInterval(timer);
   }, []);
 
-  // 3. Statistik Supabase (DIKEMAS KINI DENGAN BEARER TOKEN)
+  // 3. Statistik (DIKEMAS KINI: Memanggil API Pintu Belakang)
   useEffect(() => {
     const fetchRealStats = async () => {
       try {
         setIsLoadingStats(true);
         const { data: { session } } = await supabase.auth.getSession();
         
-        // Cipta client khusus dengan token Bearer supaya menembusi RLS
-        const authClient = session?.access_token 
-          ? createClient(supabaseUrl, supabaseAnonKey, {
-              global: { headers: { Authorization: `Bearer ${session.access_token}` } }
-            })
-          : supabase;
+        // Bawa Kunci Pengesahan
+        const authHeaders = session?.access_token 
+          ? { Authorization: `Bearer ${session.access_token}` } 
+          : {};
 
-        const { count: subjectCount } = await authClient.from('subjects').select('*', { count: 'exact', head: true });
-        const { count: docCount } = await authClient.from('documents').select('*', { count: 'exact', head: true });
-        const { count: archiveCount } = await authClient.from('archives').select('*', { count: 'exact', head: true });
+        // Panggil API kita sendiri dan bukannya database secara terus
+        const [subRes, docRes] = await Promise.all([
+          fetch('/api/subjects', { headers: authHeaders }),
+          fetch('/api/documents', { headers: authHeaders })
+        ]);
+
+        const subJson = subRes.ok ? await subRes.json() : { success: false, data: [] };
+        const docJson = docRes.ok ? await docRes.json() : { success: false, data: [] };
 
         setStats({
-          subjects: subjectCount || 0,
-          docs: docCount || 0,
-          archives: archiveCount || 0,
+          subjects: subJson.success ? subJson.data.length : 0,
+          docs: docJson.success ? docJson.data.length : 0,
+          archives: 0, // Arkib dikekalkan 0 sementara menunggu modul arkib siap
         });
       } catch (err) {
         console.error(err);
@@ -171,7 +174,6 @@ export default function DashboardUtama() {
     }
   };
 
-  // FUNGSI SIMPAN KEMAS KINI PROFIL & KATA LALUAN
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsUpdatingProfile(true);
@@ -180,7 +182,6 @@ export default function DashboardUtama() {
         data: { name: editName, full_name: editName, faculty: editFaculty }
       };
       
-      // Hanya tukar password jika ruangan diisi
       if (editPassword.trim().length > 0) {
         if (editPassword.length < 6) throw new Error("Kata laluan mesti sekurang-kurangnya 6 aksara.");
         updatePayload.password = editPassword;
@@ -189,7 +190,6 @@ export default function DashboardUtama() {
       const { error } = await supabase.auth.updateUser(updatePayload);
       if (error) throw error;
 
-      // Update UI & LocalStorage
       setUserProfile(prev => {
         const updated = { ...prev, name: editName, faculty: editFaculty };
         if (typeof window !== 'undefined') {
@@ -204,7 +204,7 @@ export default function DashboardUtama() {
 
       alert('Alhamdulillah! Maklumat profil / kata laluan berjaya dikemas kini.');
       setShowProfileModal(false);
-      setEditPassword(''); // Reset ruangan password
+      setEditPassword('');
     } catch (err: any) {
       alert(`Gagal kemas kini: ${err.message}`);
     } finally {
@@ -276,13 +276,11 @@ export default function DashboardUtama() {
     { id: 'tetapan', title: 'Tetapan Pentadbir', desc: 'Urus pendaftaran pensyarah & templat rasmi fakulti.', icon: '⚙️', link: '/admin', bgColor: '#fef2f2' }
   ];
 
-  // LOGIK TAPISAN ROLE (PENSYARAH VS ADMIN)
   const allowedMenuItems = allMenuItems.filter(item => {
     if (userProfile.role !== 'admin') {
-      // Sembunyikan Arkib & Tetapan jika bukan admin
       return item.id !== 'arkib' && item.id !== 'tetapan';
     }
-    return true; // Admin nampak semua
+    return true; 
   });
 
   return (
@@ -348,7 +346,6 @@ export default function DashboardUtama() {
               </div>
             </div>
             
-            {/* BULATAN AVATAR PROFIL */}
             <div onClick={() => document.getElementById('avatar-file-input')?.click()} style={{ width: '54px', height: '54px', borderRadius: '50%', backgroundColor: '#fde047', color: '#3b0764', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.2rem', boxShadow: '0 4px 15px rgba(0,0,0,0.3)', border: '2px solid #ffffff', cursor: 'pointer', overflow: 'hidden', position: 'relative' }} title="Klik untuk muat naik gambar profil">
               {userProfile.avatarUrl ? <img src={userProfile.avatarUrl} alt="Profil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : getInitials(userProfile.name)}
               {isUploadingAvatar && <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem' }}>⏳</div>}
