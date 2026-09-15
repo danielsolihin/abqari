@@ -149,6 +149,12 @@ export default function PenjanaSoalanPage() {
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState('');
 
+  // Pembantu untuk mendapatkan Token Pengesahan Sesi Supabase
+  const getAuthHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+  };
+
   // 1. Pengambilan Profil Pengguna Dinamik (Supabase Auth / LocalStorage)
   useEffect(() => {
     const fetchUserProfile = async () => {
@@ -179,10 +185,22 @@ export default function PenjanaSoalanPage() {
     fetchUserProfile();
   }, []);
 
+  // DIKEMAS KINI: Memanggil senarai subjek dengan Bearer Token
   useEffect(() => {
-    fetch('/api/subjects')
-      .then(res => res.json())
-      .then(json => { if (json.success) setSubjects(json.data); });
+    const fetchSubjects = async () => {
+      try {
+        const authHeaders = await getAuthHeaders();
+        const response = await fetch('/api/subjects', {
+          headers: { ...authHeaders }
+        });
+        const json = await response.json();
+        if (json.success) setSubjects(json.data);
+      } catch (error) {
+        console.error('Ralat mengambil senarai subjek:', error);
+      }
+    };
+    
+    fetchSubjects();
   }, []);
 
   const handleSubjectChange = (subjectId: string) => {
@@ -389,6 +407,7 @@ export default function PenjanaSoalanPage() {
     } catch (error) { alert('Gagal menjana Word: Pastikan tag {@SKEMA} wujud.'); }
   };
 
+  // DIKEMAS KINI: Menghantar Token Bearer kepada API AI /generate-questions
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSubject) return alert('Sila pilih subjek terlebih dahulu.');
@@ -423,8 +442,13 @@ export default function PenjanaSoalanPage() {
     }, 1000);
 
     try {
+      const authHeaders = await getAuthHeaders();
       const response = await fetch('/api/generate-questions', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', 
+        headers: { 
+          'Content-Type': 'application/json',
+          ...authHeaders
+        },
         body: JSON.stringify({ 
            subjectId: selectedSubject, courseName, courseCode, examPeriod, duration, theme, sections: finalSections, bloomCounts, setSoalan,
            co: subjectCOs, lo: subjectLOs, topicDistribution: activeTopics,
