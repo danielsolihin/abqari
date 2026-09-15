@@ -100,16 +100,23 @@ export default function DashboardUtama() {
     return () => clearInterval(timer);
   }, []);
 
-  // 3. Statistik Supabase
+  // 3. Statistik Supabase (DIKEMAS KINI DENGAN BEARER TOKEN)
   useEffect(() => {
     const fetchRealStats = async () => {
       try {
         setIsLoadingStats(true);
-        // Supabase RLS (Row Level Security) akan secara automatik 
-        // hanya mengira subjek milik pensyarah ini sahaja jika RLS diaktifkan
-        const { count: subjectCount } = await supabase.from('subjects').select('*', { count: 'exact', head: true });
-        const { count: docCount } = await supabase.from('documents').select('*', { count: 'exact', head: true });
-        const { count: archiveCount } = await supabase.from('archives').select('*', { count: 'exact', head: true });
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        // Cipta client khusus dengan token Bearer supaya menembusi RLS
+        const authClient = session?.access_token 
+          ? createClient(supabaseUrl, supabaseAnonKey, {
+              global: { headers: { Authorization: `Bearer ${session.access_token}` } }
+            })
+          : supabase;
+
+        const { count: subjectCount } = await authClient.from('subjects').select('*', { count: 'exact', head: true });
+        const { count: docCount } = await authClient.from('documents').select('*', { count: 'exact', head: true });
+        const { count: archiveCount } = await authClient.from('archives').select('*', { count: 'exact', head: true });
 
         setStats({
           subjects: subjectCount || 0,
