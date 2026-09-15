@@ -12,19 +12,22 @@ const dbClient = createClient(
   serviceRoleKey || supabaseAnonKey
 );
 
-// Fungsi pembantu untuk mengesahkan pengguna yang sedang log masuk
+// Fungsi pembantu untuk mengesahkan pengguna yang sedang log masuk (Cookie / Bearer Token)
 async function getAuthenticatedUser(req: Request) {
   try {
     const cookieStore = await cookies();
     const authHeader = req.headers.get('authorization');
 
+    const headers: Record<string, string> = {
+      cookie: cookieStore.toString(),
+    };
+
+    if (authHeader) {
+      headers.authorization = authHeader;
+    }
+
     const authClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          ...(authHeader ? { authorization: authHeader } : {}),
-          cookie: cookieStore.toString(),
-        },
-      },
+      global: { headers },
     });
 
     const { data: { user } } = await authClient.auth.getUser();
@@ -49,7 +52,7 @@ export async function GET(req: Request) {
       .select('*')
       .order('created_at', { ascending: false });
 
-    // SEKATAN KESELAMATAN: Jika bukan admin, hanya tarik dokumen milik pensyarah ini
+    // SEKATAN KESELAMATAN: Jika bukan admin, hanya tarik dokumen milik pensyarah ini sahaja
     if (!isAdmin) {
       query = query.eq('user_id', user.id);
     }
