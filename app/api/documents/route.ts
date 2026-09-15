@@ -1,55 +1,92 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { cookies } from 'next/headers';
 
-export const runtime = 'nodejs';
-// export const dynamic = 'force-static'; // WAJIB untuk output: 'export'
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Gunakan Service Role Key jika ada, jika tidak guna Anon Key
+const dbClient = createClient(
+  supabaseUrl,
+  serviceRoleKey || supabaseAnonKey
+);
 
-// GET: Ambil senarai semua dokumen mengikut subjek
-export async function GET(req: NextRequest) {
+// Fungsi pembantu untuk mengesahkan pengguna yang sedang log masuk
+async function getAuthenticatedUser(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const subjectId = searchParams.get('subjectId');
+    const cookieStore = await cookies();
+    const authHeader = req.headers.get('authorization');
 
-    let query = supabase
+    const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          ...(authHeader ? { authorization: authHeader } : {}),
+          cookie: cookieStore.toString(),
+        },
+      },
+    });
+
+    const { data: { user } } = await authClient.auth.getUser();
+    return user;
+  } catch (err) {
+    return null;
+  }
+}
+
+// 1. Ambil senarai dokumen (GET)
+export async function GET(req: Request) {
+  try {
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Akses tidak dibenarkan. Sila log masuk.' }, { status: 401 });
+    }
+
+    const isAdmin = user.user_metadata?.role === 'admin';
+
+    let query = dbClient
       .from('documents')
-      .select('*, subjects(name, course_code)')
+      .select('*')
       .order('created_at', { ascending: false });
 
-    if (subjectId) {
-      query = query.eq('subject_id', subjectId);
+    // SEKATAN KESELAMATAN: Jika bukan admin, hanya tarik dokumen milik pensyarah ini
+    if (!isAdmin) {
+      query = query.eq('user_id', user.id);
     }
 
     const { data, error } = await query;
-    if (error) throw error;
 
+    if (error) throw error;
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
-// DELETE: Padam dokumen
-export async function DELETE(req: NextRequest) {
+// 2. Padam dokumen (DELETE)
+export async function DELETE(req: Request) {
   try {
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Akses tidak dibenarkan. Sila log masuk.' }, { status: 401 });
+    }
+
     const body = await req.json();
     const { id } = body;
 
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'ID Dokumen diperlukan.' }, { status: 400 });
+    const isAdmin = user.user_metadata?.role === 'admin';
+
+    let query = dbClient.from('documents').delete().eq('id', id);
+
+    // SEKATAN KESELAMATAN: Pastikan pensyarah hanya boleh padam fail milik mereka sendiri
+    if (!isAdmin) {
+      query = query.eq('user_id', user.id);
     }
 
-    const { error } = await supabase
-      .from('documents')
-      .delete()
-      .eq('id', id);
+    const { error } = await query;
 
     if (error) throw error;
-
-    return NextResponse.json({ success: true, message: 'Dokumen berjaya dipadamkan.' });
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
