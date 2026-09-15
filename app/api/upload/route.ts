@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
 
-      // DITUKAR: Gunakan model text-embedding-004 supaya 100% sepadan dengan modul Chat & Penjana
+      // DITUKAR: Gunakan model text-embedding-004 yang disokong oleh v1beta
       const embedResponse = await ai.models.embedContent({
         model: 'text-embedding-004',
         contents: chunk,
