@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { cookies } from 'next/headers';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -12,22 +11,21 @@ const dbClient = createClient(
   serviceRoleKey || supabaseAnonKey
 );
 
-// Fungsi pembantu untuk mengesahkan pengguna yang sedang log masuk
+// Pembantu pengesahan pengguna berasaskan Token Bearer
 async function getAuthenticatedUser(req: Request) {
   try {
-    const cookieStore = await cookies();
     const authHeader = req.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return null;
+    }
 
-    const authClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          ...(authHeader ? { authorization: authHeader } : {}),
-          cookie: cookieStore.toString(),
-        },
-      },
-    });
-
-    const { data: { user } } = await authClient.auth.getUser();
+    const token = authHeader.split(' ')[1];
+    const authClient = createClient(supabaseUrl, supabaseAnonKey);
+    
+    // Ekstrak user secara terus menggunakan token JWT
+    const { data: { user }, error } = await authClient.auth.getUser(token);
+    
+    if (error || !user) return null;
     return user;
   } catch (err) {
     return null;
@@ -118,7 +116,6 @@ export async function PUT(req: Request) {
       })
       .eq('id', id);
 
-    // Sekat supaya pensyarah tidak boleh kemas kini subjek orang lain
     if (!isAdmin) {
       query = query.eq('user_id', user.id);
     }
@@ -147,7 +144,6 @@ export async function DELETE(req: Request) {
 
     let query = dbClient.from('subjects').delete().eq('id', id);
 
-    // Sekat supaya pensyarah tidak boleh padam subjek orang lain
     if (!isAdmin) {
       query = query.eq('user_id', user.id);
     }
