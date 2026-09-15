@@ -1,13 +1,11 @@
-import "pdf-parse/worker"; // Membaiki ralat DOMMatrix is not defined
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic'; // Melayan pemprosesan fail serverless di Vercel
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY });
@@ -33,26 +31,29 @@ export async function POST(req: NextRequest) {
     if (!subjectId) return NextResponse.json({ error: 'ID Subjek diperlukan.' }, { status: 400 });
 
     // ==========================================
-    // FUNGSI SEMAKAN FAIL PENDUA
+    // FUNGSI BAHARU: SEMAKAN FAIL PENDUA
+    // Semak jika file_name yang sama sudah wujud untuk subject_id ini
     // ==========================================
     const { data: existingDoc, error: checkError } = await supabase
       .from('documents')
       .select('id')
       .eq('subject_id', subjectId)
       .eq('file_name', file.name)
-      .maybeSingle();
+      .maybeSingle(); // Cari satu sahaja, tak perlu error jika tiada
 
     if (checkError) {
       throw new Error(`Ralat menyemak data pendua: ${checkError.message}`);
     }
 
     if (existingDoc) {
+      // Jika fail dijumpai, sekat terus (return ralat)
       return NextResponse.json({ 
         error: `Fail "${file.name}" telah wujud untuk subjek ini. Sila padam fail lama jika anda ingin mengemas kini.` 
       }, { status: 400 });
     }
     // ==========================================
 
+    // Jika tiada pendua, kod akan terus berjalan seperti biasa
     const arrayBuffer = await file.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
 
@@ -111,16 +112,16 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
 
-      // DITUKAR: Gunakan model text-embedding-004 yang stabil untuk Gemini API
       const embedResponse = await ai.models.embedContent({
-        model: 'text-embedding-004',
+        model: 'gemini-embedding-2',
         contents: chunk,
+        config: { outputDimensionality: 768 },
       });
 
       const embedding =
-        embedResponse.embeddings?.[0]?.values ||
-        (embedResponse as any)?.embedding?.values ||
-        (embedResponse as any)?.values;
+        embedResponse.embedding?.values ||
+        (embedResponse as any)?.values ||
+        (embedResponse as any)?.embeddings?.[0]?.values;
 
       if (!embedding) throw new Error(`Gagal menjana vektor untuk perenggan ke-${i + 1}`);
 
