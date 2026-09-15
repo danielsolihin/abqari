@@ -4,11 +4,56 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } from 'docx';
 import { saveAs } from 'file-saver';
+import { createClient } from '@supabase/supabase-js';
+
+// Inisialisasi Supabase Client untuk profil dinamik
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function ArkibPage() {
   const [archives, setArchives] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedArchive, setSelectedArchive] = useState<any | null>(null);
+
+  // State Profil Pengguna Dinamik Supabase
+  const [userProfile, setUserProfile] = useState<{
+    name: string;
+    faculty: string;
+  }>({
+    name: 'Pengguna ABQARI',
+    faculty: 'Akademi Pengajian Islam Kontemporari (ACIS)',
+  });
+
+  // Pengambilan Profil Pengguna Dinamik (Supabase Auth / LocalStorage)
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const localUser = typeof window !== 'undefined' ? localStorage.getItem('abqari_user') : null;
+
+        if (session?.user) {
+          const meta = session.user.user_metadata || {};
+          setUserProfile({
+            name: meta.full_name || meta.name || session.user.email?.split('@')[0] || 'Pengguna ABQARI',
+            faculty: meta.faculty || 'Akademi Pengajian Islam Kontemporari (ACIS)',
+          });
+        } else if (localUser) {
+          try {
+            const parsed = JSON.parse(localUser);
+            setUserProfile({
+              name: parsed.name || 'Pengguna ABQARI',
+              faculty: parsed.faculty || 'Akademi Pengajian Islam Kontemporari (ACIS)',
+            });
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.error('Ralat mengambil profil pengguna:', err);
+      }
+    };
+
+    fetchUserProfile();
+  }, []);
 
   const fetchArchives = async () => {
     setIsLoading(true);
@@ -163,9 +208,11 @@ export default function ArkibPage() {
             <h1 style={{ margin: 0, fontSize: '1.8rem', fontWeight: '900', letterSpacing: '-0.5px' }}>Arkib Kertas Ujian</h1>
             <p style={{ margin: '3px 0 0 0', fontSize: '0.85rem', color: '#e2e8f0' }}>Sejarah Penjanaan Soalan AI ABQARI</p>
           </div>
+
+          {/* PAPARAN PROFIL PENGGUNA DINAMIK */}
           <div style={{ color: 'white', textAlign: 'right', fontSize: '0.8rem' }}>
-            <strong>Prof. Dr. Ahmad Fakhruddin</strong><br />
-            <span style={{ opacity: 0.8 }}>Fakulti Pengajian Islam (FPI)</span>
+            <strong style={{ fontSize: '0.95rem', display: 'block' }}>{userProfile.name}</strong>
+            <span style={{ opacity: 0.8 }}>{userProfile.faculty}</span>
           </div>
         </div>
 
