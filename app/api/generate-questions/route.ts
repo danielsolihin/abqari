@@ -18,7 +18,6 @@ const THEME_KEYWORDS: Record<string, string> = {
   "Semua Tema": "Integrasi dan gabungan menyeluruh merangkumi Agama, Falsafah, dan Saintifik."
 };
 
-// Algoritma Matematik Cosine Similarity untuk Vektor Embeddings
 function calculateCosineSimilarity(vecA: number[], vecB: number[]): number {
   if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
   let dotProduct = 0;
@@ -42,7 +41,6 @@ export async function POST(req: NextRequest) {
 
     if (!subjectId) return NextResponse.json({ error: 'ID Subjek diperlukan.' }, { status: 400 });
 
-    // 1. Ambil semua dokumen & cebisan teks (chunks) berserta vektor embedding
     const { data: chunks, error: chunksError } = await supabase
       .from('document_chunks')
       .select(`id, content, embedding, documents!inner(subject_id)`)
@@ -52,14 +50,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Tiada dokumen PDF dijumpai untuk subjek ini.' }, { status: 404 });
     }
 
-    // 2. BINA CARIAN VEKTOR PINTAR (VECTOR SIMILARITY SEARCH)
     const activeTopics = topicDistribution?.filter((t: any) => t.name.trim() !== '') || [];
     const queryTopicText = activeTopics.map((t: any) => t.name).join(' ') || theme;
     
     let relevantChunks = chunks;
 
     try {
-      // Jana vector embedding untuk kata kunci topik sasaran (Model baharu gemini-embedding-001 dengan 768 dimensi)
       const queryEmbedResponse = await ai.models.embedContent({
         model: 'gemini-embedding-001',
         contents: `${queryTopicText} ${THEME_KEYWORDS[theme] || ''}`,
@@ -74,7 +70,6 @@ export async function POST(req: NextRequest) {
         (queryEmbedResponse as any)?.values;
 
       if (queryVector) {
-        // Kira Cosine Similarity untuk setiap chunk dan susun mengikut skor tertinggi
         const scoredChunks = chunks.map((c: any) => {
           let score = 0;
           if (Array.isArray(c.embedding)) {
@@ -84,7 +79,6 @@ export async function POST(req: NextRequest) {
         });
 
         scoredChunks.sort((a, b) => b.score - a.score);
-        // Pilih top 15 chunks paling relevan sahaja
         relevantChunks = scoredChunks.slice(0, 15);
       }
     } catch (embedError) {
@@ -105,10 +99,9 @@ export async function POST(req: NextRequest) {
     if (activeTopics.length > 0) {
       const topicList = activeTopics.map((t: any) => `- ${t.name} (${t.percentage}%)`).join('\n');
       topicPrompt = `
-TABURAN TOPIK KURSUS (WAJIB DIPATUHI):
-Anda mesti mengagihkan penghasilan soalan berpandukan peratusan (pemberat) topik-topik di bawah sedekat yang mungkin berdasarkan jumlah soalan:
+TABURAN TOPIK KURSUS:
+Anda mesti mengagihkan penghasilan soalan berpandukan peratusan topik di bawah:
 ${topicList}
-Pastikan fokus maklumat yang diekstrak mewakili pemberat topik ini.
 `;
     }
 
@@ -122,12 +115,12 @@ Pastikan fokus maklumat yang diekstrak mewakili pemberat topik ini.
       skemaPrompt += `\nBAHAGIAN ${sectionName}\n`;
 
       if (sectionData.type === 'objektif') {
-        formatPrompt += `WAJIB hasilkan TEPAT ${sectionData.count} soalan berformat Objektif (A, B, C, D). JANGAN KURANG, JANGAN LEBIH!\n`;
+        formatPrompt += `WAJIB hasilkan TEPAT ${sectionData.count} soalan berformat Objektif (A, B, C, D).\n`;
         formatPrompt += `1. [Soalan] [C: ..] [LO: ..] [Aras: CX]\n   A. [Pilihan 1]\n   B. [Pilihan 2]\n   C. [Pilihan 3]\n   D. [Pilihan 4]\n`;
         skemaPrompt += `1. [Jawapan A/B/C/D]\n...(Teruskan sehingga soalan ke-${sectionData.count})\n`;
       } 
       else if (sectionData.type === 'true_false') {
-        formatPrompt += `WAJIB hasilkan TEPAT ${sectionData.count} soalan berformat Benar/Salah. JANGAN KURANG, JANGAN LEBIH!\n`;
+        formatPrompt += `WAJIB hasilkan TEPAT ${sectionData.count} soalan berformat Benar/Salah.\n`;
         formatPrompt += `1. [Soalan] [C: ..] [LO: ..] [Aras: CX]\n   A. BENAR\n   B. SALAH\n`;
         skemaPrompt += `1. [Jawapan BENAR/SALAH]\n...(Teruskan sehingga soalan ke-${sectionData.count})\n`;
       } 
@@ -146,7 +139,7 @@ Pastikan fokus maklumat yang diekstrak mewakili pemberat topik ini.
           }
         }
         
-        formatPrompt += `WAJIB hasilkan TEPAT ${sectionData.count} soalan utama berformat Esei/Subjektif.\nPENTING: Jawab SEMUA soalan di bawah ini.\n${subQFormat}...(Teruskan mematuhi format ini untuk Soalan 2, Soalan 3 dan seterusnya sehingga Soalan ${sectionData.count})\n`;
+        formatPrompt += `WAJIB hasilkan TEPAT ${sectionData.count} soalan utama berformat Esei/Subjektif.\n${subQFormat}...(Teruskan sehingga Soalan ${sectionData.count})\n`;
         skemaPrompt += `${subQSkema}...(Teruskan skema ini sehingga Soalan ${sectionData.count})\n`;
       }
     };
@@ -158,42 +151,45 @@ Pastikan fokus maklumat yang diekstrak mewakili pemberat topik ini.
     const prompt = `Anda adalah Penggubal Soalan Peperiksaan Akademik Rasmi UiTM bertaraf Profesor.
 Tugas anda adalah menjana ISI KANDUNGAN SOALAN untuk SET SOALAN ${setSoalan} dan SKEMA JAWAPAN sahaja. JANGAN jana maklumat "Header".
 
-AMARAN KERAS (WAJIB PATUH JUMLAH & STRUKTUR):
-1. JIKA sesuatu format (Bahagian A, B, atau C) TIDAK DIMINTA di dalam arahan "FORMAT SOALAN YANG DIKEHENDAKI" di bawah, ANDA DILARANG SAMA SEKALI mewujudkannya.
-2. ANDA WAJIB menghasilkan JUMLAH SOALAN YANG TEPAT seperti yang dinyatakan. Jika diminta 20 soalan, anda mesti kira dan cetak dari nombor 1 hingga nombor 20 TANPA GAGAL.
-3. Untuk Soalan Bertingkat (jika ada diminta), pastikan anda pecahkan soalan kepada a, b, c mengikut jumlah yang ditetapkan.
+==================================================
+HIRARKI KEUTAMAAN MUTLAK (WAJIB DIPATUHI WALAUPUN APA JUA KEADAAN):
+==================================================
 
-KAWALAN SUMBER & KREATIVITI OLAHAN ("MENGGORENG TERKAWAL"):
-1. KEBENARAN MENGOLAH KREATIF: Bagi memastikan sasaran kuota soalan tercapai, anda DIBENARKAN MENGGORENG, mengolah, memanipulasi, membina senario aplikasi (kes/situasi), dan memutarbelitkan bentuk soalan seluas-luasnya. 
-2. SYARAT MUTLAK: Walaupun anda menggoreng ayat senario atau struktur soalan secara meluas, FAKTA ASAS dan JAWAPAN yang menyokong soalan tersebut MESTILAH berasal 100% dari "TEKS SUMBER KURSUS" di bawah.
+KEUTAMAAN #1 (MUTLAK & TERTINGGI - KUOTA ARAS BLOOM TEPAT 100%):
+Anda WAJIB memastikan JUMLAH KESELURUHAN TAG [Aras: CX] di dalam kertas soalan ini TEPAT KETAT sepadan dengan sasaran nombor di bawah. DILARANG SAMA SEKALI LEBIH ATAU KURANG!
+- Aras [Aras: C1] (Pengetahuan) : WAJIB TEPAT ${bloomCounts.C1} soalan (Tepat ${bloomCounts.C1} tag sahaja!)
+- Aras [Aras: C2] (Pemahaman)   : WAJIB TEPAT ${bloomCounts.C2} soalan (Tepat ${bloomCounts.C2} tag sahaja!)
+- Aras [Aras: C3] (Aplikasi)    : WAJIB TEPAT ${bloomCounts.C3} soalan (Tepat ${bloomCounts.C3} tag sahaja!)
+- Aras [Aras: C4] (Analisis)    : WAJIB TEPAT ${bloomCounts.C4} soalan (Tepat ${bloomCounts.C4} tag sahaja!)
+- Aras [Aras: C5] (Sintesis)    : WAJIB TEPAT ${bloomCounts.C5} soalan (Tepat ${bloomCounts.C5} tag sahaja!)
+- Aras [Aras: C6] (Penilaian)   : WAJIB TEPAT ${bloomCounts.C6} soalan (Tepat ${bloomCounts.C6} tag sahaja!)
 
-KETEPATAN ISTILAH & LARAS BAHASA AGAMA (KONTEKS MALAYSIA):
-1. Peperiksaan rasmi di Malaysia.
-2. Gunakan "Al-Quran" apabila merujuk kitab suci secara khusus.
-3. Sentiasa utamakan terma tepat dari Teks Sumber.
+PENTING: Sebelum mencetak jawapan akhir, kira semula jumlah tag [Aras: CX] anda supaya nisbahnya 100% tepat mengikut sasaran angka di atas.
 
-KEUTAMAAN TERTINGGI (SASARAN KUOTA ARAS BLOOM):
-- C1 (Pengetahuan) : ${bloomCounts.C1} soalan
-- C2 (Pemahaman)   : ${bloomCounts.C2} soalan
-- C3 (Aplikasi)    : ${bloomCounts.C3} soalan
-- C4 (Analisis)    : ${bloomCounts.C4} soalan
-- C5 (Sintesis)    : ${bloomCounts.C5} soalan
-- C6 (Penilaian)   : ${bloomCounts.C6} soalan
+KEUTAMAAN #2 (JUMLAH & STRUKTUR BAHAGIAN SOALAN):
+1. JIKA sesuatu format (Bahagian A, B, atau C) TIDAK DIMINTA di dalam arahan "FORMAT SOALAN YANG DIKEHENDAKI" di bawah, DILARANG mewujudkannya.
+2. ANDA WAJIB menghasilkan JUMLAH SOALAN YANG TEPAT seperti yang dinyatakan dalam setiap bahagian.
 
-TEMA SOALAN & FOKUS:
+KEUTAMAAN #3 (TEMA, TOPIK, DOMAIN CO & LO):
 - Tema Pilihan: **${theme.toUpperCase()}**
 - Fokus Konsep: ${currentThemeKeywords}
 ${themeWarning}
 ${topicPrompt}
-
-SENARAI DOMAIN DAN LO:
 - Pilihan Domain: ${coListString}
 - Pilihan LO: ${loListString}
+
+KEUTAMAAN #4 (KAWALAN SUMBER & KREATIVITI OLAHAN):
+1. Bagi memastikan kuota sasaran Aras Bloom dipatuhi, anda DIBENARKAN MENGGORENG dan membina senario kes/situasi mengikut aras soalan yang diperlukan.
+2. Fakta asas dan jawapan tetap berasal dari "TEKS SUMBER KURSUS".
+
+KETEPATAN ISTILAH & LARAS BAHASA AGAMA (KONTEKS MALAYSIA):
+1. Peperiksaan rasmi di Malaysia.
+2. Gunakan "Al-Quran" apabila merujuk kitab suci secara khusus.
 
 FORMAT SOALAN YANG DIKEHENDAKI:
 ${formatPrompt}
 
-TEKS SUMBER KURSUS (CEBISAN RELEVAN HASIL CARIAN VEKTOR):
+TEKS SUMBER KURSUS:
 """
 ${contextText}
 """
@@ -203,7 +199,6 @@ ${skemaPrompt}
 SKEMA JAWAPAN TAMAT
 `;
 
-    // DITUKAR: Naik taraf kepada model rasmi baharu gemini-3.6-flash
     const response = await ai.models.generateContent({
       model: 'gemini-3.6-flash',
       contents: prompt,
