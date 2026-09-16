@@ -2,19 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 
-// -------------------------------------------------------------------
-// TETAPAN PENTING: Paksa Vercel beri masa maksimum (60 saat) 
-// untuk membolehkan AI membaca nota tebal & menjana soalan berkualiti
-// -------------------------------------------------------------------
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // Had maksimum untuk akaun Vercel Hobby (Percuma)
+export const dynamic = 'force-dynamic'; // Memastikan enjin API serverless berjalan live di Vercel
+export const maxDuration = 60; // WAJIB ADA: Memberi masa maksimum supaya Vercel tidak "Timeout" semasa AI berfikir
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Inisialisasi Enjin AI Google
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY });
 
 const THEME_KEYWORDS: Record<string, string> = {
@@ -63,8 +58,11 @@ export async function POST(req: NextRequest) {
 
     try {
       const queryEmbedResponse = await ai.models.embedContent({
-        model: 'text-embedding-004',
+        model: 'gemini-embedding-001',
         contents: `${queryTopicText} ${THEME_KEYWORDS[theme] || ''}`,
+        config: {
+          outputDimensionality: 768,
+        },
       });
 
       const queryVector =
@@ -82,12 +80,10 @@ export async function POST(req: NextRequest) {
         });
 
         scoredChunks.sort((a, b) => b.score - a.score);
-        // KUALITI MAKSIMUM: Menggunakan 20 kepingan teks (Chunks) paling relevan
-        relevantChunks = scoredChunks.slice(0, 20);
+        relevantChunks = scoredChunks.slice(0, 15);
       }
     } catch (embedError) {
-      console.warn('Amaran: Gagal carian vektor, guna fallback chunks:', embedError);
-      relevantChunks = chunks.slice(0, 20);
+      console.warn('Amaran: Gagal melaksanakan carian vektor, menggunakan mod fail-safe:', embedError);
     }
 
     const contextText = relevantChunks.map(c => c.content).join('\n\n');
@@ -170,11 +166,13 @@ KEUTAMAAN #1 (KUOTA ARAS BLOOM & SUSUNAN RAWAK / RESHUFFLE):
    - Aras [Aras: C6] (Penilaian)   : WAJIB TEPAT ${bloomCounts.C6} soalan
 
 2. ARAHAN RESHUFFLE (SUSUNAN RAWAK & BERSERTAAN):
-   - DILARANG SAMA SEKALI menyusun aras soalan secara berkelompok berturutan.
-   - Anda WAJIB MENGACAK / MERAWAKKAN (RESHUFFLE) taburan aras Bloom secara dinamik sepanjang kertas soalan.
+   - DILARANG SAMA SEKALI menyusun aras soalan secara berkelompok berturutan (seperti mengumpul semua C1 dari soalan 1-10, kemudian C2 dari soalan 11-20).
+   - Anda WAJIB MENGACAK / MERAWAKKAN (RESHUFFLE) taburan aras Bloom secara dinamik sepanjang kertas soalan (contohnya: Soalan 1 [Aras: C2], Soalan 2 [Aras: C4], Soalan 3 [Aras: C1], Soalan 4 [Aras: C3]...).
+   - Walau bagaimanapun, pastikan jumlah keseluruhan tag bagi setiap aras di AKHIR PENJANAAN adalah TEPAT 100% seperti nisbah kuota di atas.
 
 KEUTAMAAN #2 (JUMLAH & STRUKTUR BAHAGIAN SOALAN):
-1. ANDA WAJIB menghasilkan JUMLAH SOALAN YANG TEPAT seperti yang dinyatakan.
+1. JIKA sesuatu format (Bahagian A, B, atau C) TIDAK DIMINTA di dalam arahan "FORMAT SOALAN YANG DIKEHENDAKI" di bawah, DILARANG mewujudkannya.
+2. ANDA WAJIB menghasilkan JUMLAH SOALAN YANG TEPAT seperti yang dinyatakan dalam setiap bahagian.
 
 KEUTAMAAN #3 (TEMA, TOPIK, DOMAIN CO & LO):
 - Tema Pilihan: **${theme.toUpperCase()}**
@@ -184,8 +182,13 @@ ${topicPrompt}
 - Pilihan Domain: ${coListString}
 - Pilihan LO: ${loListString}
 
-KEUTAMAAN #4 (KAWALAN SUMBER & FAKTA MUTLAK):
-1. Fakta asas dan jawapan MESTI berasal 100% HANYA dari "TEKS SUMBER KURSUS". Dilarang mereka cipta fakta luar.
+KEUTAMAAN #4 (KAWALAN SUMBER & KREATIVITI OLAHAN):
+1. Bagi memastikan kuota sasaran Aras Bloom dipatuhi, anda DIBENARKAN MENGGORENG dan membina senario kes/situasi mengikut aras soalan yang diperlukan.
+2. Fakta asas dan jawapan tetap berasal dari "TEKS SUMBER KURSUS".
+
+KETEPATAN ISTILAH & LARAS BAHASA AGAMA (KONTEKS MALAYSIA):
+1. Peperiksaan rasmi di Malaysia.
+2. Gunakan "Al-Quran" apabila merujuk kitab suci secara khusus.
 
 FORMAT SOALAN YANG DIKEHENDAKI:
 ${formatPrompt}
@@ -200,41 +203,11 @@ ${skemaPrompt}
 SKEMA JAWAPAN TAMAT
 `;
 
-    let response;
-    let lastError = '';
-
-    // SENARAI MODEL: Dari Generasi Terkini & Terbaik menurun ke versi lama
-    // Sistem akan secara automatik mencari model mana yang aktif pada API Key
-    const candidateModels = [
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-1.5-pro-latest',
-      'gemini-1.5-pro',
-      'gemini-1.5-flash'
-    ];
-
-    for (const modelName of candidateModels) {
-      try {
-        console.log(`Mencuba penjanaan dengan model: ${modelName}...`);
-        response = await ai.models.generateContent({ 
-          model: modelName, 
-          contents: prompt 
-        });
-        // Jika berjaya dan ada teks jawapan, terus berhenti mencuba
-        if (response && response.text) {
-          console.log(`[BERJAYA] Menggunakan model: ${modelName}`);
-          break;
-        }
-      } catch (err: any) {
-        lastError = err.message || JSON.stringify(err);
-        console.warn(`[Model ${modelName} Gagal]: ${lastError}`);
-      }
-    }
-
-    if (!response || !response.text) {
-      throw new Error(`Google AI API Error: ${lastError || 'Semua model gagal atau tidak wujud pada API Key anda.'}`);
-    }
+    // DIKEMASKINI HANYA DI SINI: Menggunakan model premium "gemini-1.5-pro" yang sah dan wujud
+    const response = await ai.models.generateContent({
+      model: 'gemini-1.5-pro',
+      contents: prompt,
+    });
 
     const generatedText = response.text || '';
 
