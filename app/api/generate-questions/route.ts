@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic'; // Memastikan enjin API serverless berjalan live di Vercel
+export const dynamic = 'force-dynamic';
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -59,9 +59,7 @@ export async function POST(req: NextRequest) {
       const queryEmbedResponse = await ai.models.embedContent({
         model: 'gemini-embedding-001',
         contents: `${queryTopicText} ${THEME_KEYWORDS[theme] || ''}`,
-        config: {
-          outputDimensionality: 768,
-        },
+        config: { outputDimensionality: 768 },
       });
 
       const queryVector =
@@ -202,27 +200,33 @@ ${skemaPrompt}
 SKEMA JAWAPAN TAMAT
 `;
 
+    // -------------------------------------------------------------
+    // SISTEM FALLBACK 3 PERINGKAT DENGAN MASA BERTENANG (DELAY)
+    // -------------------------------------------------------------
     let response;
-    
-    // SISTEM FALLBACK 2 PERINGKAT (Menangani Isu High Demand / 503)
+    const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+
     try {
-      // Pelan A: Guna model paling pintar (gemini-1.5-pro)
-      response = await ai.models.generateContent({
-        model: 'gemini-1.5-pro',
-        contents: prompt,
-      });
-    } catch (primaryError: any) {
-      console.warn(`[Pelan A Gagal] Pelayan Gemini Pro sibuk (${primaryError.message}). Beralih ke Pelan B (Gemini Flash)...`);
+      // Pelan A: Model utama (gemini-1.5-pro)
+      response = await ai.models.generateContent({ model: 'gemini-1.5-pro', contents: prompt });
+    } catch (errA: any) {
+      console.warn(`[Pelan A Gagal]: ${errA.message}. Bertenang 2 saat...`);
+      await delay(2000); // Masa bertenang supaya pelayan tidak sekat kerana spam
       
       try {
-        // Pelan B: Jika Pelan A gagal/sibuk, tukar gear guna model ringan & pantas (gemini-1.5-flash)
-        response = await ai.models.generateContent({
-          model: 'gemini-1.5-flash',
-          contents: prompt,
-        });
-      } catch (fallbackError: any) {
-        console.error('[Pelan B Gagal] Kedua-dua model AI sedang sesak:', fallbackError);
-        throw new Error('Sistem AI Google sedang mengalami kesesakan kritikal pada waktu ini. Sila cuba lagi selepas beberapa minit.');
+        // Pelan B: Model pantas (gemini-1.5-flash)
+        response = await ai.models.generateContent({ model: 'gemini-1.5-flash', contents: prompt });
+      } catch (errB: any) {
+        console.warn(`[Pelan B Gagal]: ${errB.message}. Bertenang 2 saat...`);
+        await delay(2000);
+
+        try {
+          // Pelan C: Model paling ringan, laju & kebal jem (gemini-1.5-flash-8b)
+          response = await ai.models.generateContent({ model: 'gemini-1.5-flash-8b', contents: prompt });
+        } catch (errC: any) {
+          console.error('[Semua Pelan Gagal]:', errC);
+          throw new Error('Sistem AI Google sedang mengalami kesesakan kritikal pada waktu ini. Sila cuba lagi selepas beberapa minit.');
+        }
       }
     }
 
@@ -242,7 +246,7 @@ SKEMA JAWAPAN TAMAT
         subject_name: courseName || 'Subjek Tanpa Nama',
         exam_period: examPeriod || 'JULAI 2026',
         type: `Set ${setSoalan} (${theme})`,
-        generator_name: 'Prof. Dr. Ahmad Fakhruddin', // Sila pastikan nama ini dinamik jika perlu pada masa akan datang
+        generator_name: 'Prof. Dr. Ahmad Fakhruddin',
         status: 'Selesai',
         questions_text: qText,
         scheme_text: sText
