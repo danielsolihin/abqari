@@ -202,12 +202,17 @@ SKEMA JAWAPAN TAMAT
     let response;
     let lastError = '';
 
-    // UTAMAKAN MODEL 'PRO' UNTUK KUALITI TINGGI (TIADA KOMPROMI)
-    const candidateModels = ['gemini-1.5-pro', 'gemini-1.5-flash'];
+    // SENARAI MODEL SAH DENGAN NAMA PENUH UNTUK VERSI SDK TERKINI
+    const candidateModels = [
+      'gemini-2.0-flash',       // Model utama terkini paling pantas & stabil
+      'gemini-1.5-pro-latest',  // Model Pro kualiti tertinggi
+      'gemini-1.5-pro-002',     // Fallback model Pro versi khusus
+      'gemini-1.5-pro'          // Fallback asas
+    ];
 
     for (const modelName of candidateModels) {
       try {
-        console.log(`Mencuba penjanaan dengan model kualiti tinggi: ${modelName}...`);
+        console.log(`Mencuba penjanaan dengan model: ${modelName}...`);
         response = await ai.models.generateContent({ 
           model: modelName, 
           contents: prompt 
