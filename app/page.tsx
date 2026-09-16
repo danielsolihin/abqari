@@ -24,11 +24,13 @@ export default function DashboardUtama() {
     faculty: string;
     avatarUrl: string | null;
     role: string;
+    lastLogin: string | null;
   }>({
     name: 'Memuatkan...',
     faculty: 'Memuatkan...',
     avatarUrl: null,
     role: 'pensyarah',
+    lastLogin: null,
   });
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
@@ -71,6 +73,7 @@ export default function DashboardUtama() {
             faculty: meta.faculty || 'Fakulti Pengajian',
             avatarUrl: meta.avatar_url || localAvatarUrl || null,
             role: meta.role || 'pensyarah',
+            lastLogin: session.user.last_sign_in_at || null, // Ambil masa log masuk terakhir dari Supabase
           });
         } else if (localUser) {
           try {
@@ -80,6 +83,7 @@ export default function DashboardUtama() {
               faculty: parsed.faculty || 'Fakulti Pengajian',
               avatarUrl: parsed.avatarUrl || null,
               role: parsed.role || 'pensyarah',
+              lastLogin: null,
             });
           } catch {}
         }
@@ -100,19 +104,17 @@ export default function DashboardUtama() {
     return () => clearInterval(timer);
   }, []);
 
-  // 3. Statistik (DIKEMAS KINI: Memanggil API Pintu Belakang)
+  // 3. Statistik
   useEffect(() => {
     const fetchRealStats = async () => {
       try {
         setIsLoadingStats(true);
         const { data: { session } } = await supabase.auth.getSession();
         
-        // Bawa Kunci Pengesahan
         const authHeaders = session?.access_token 
           ? { Authorization: `Bearer ${session.access_token}` } 
           : {};
 
-        // Panggil API kita sendiri dan bukannya database secara terus
         const [subRes, docRes] = await Promise.all([
           fetch('/api/subjects', { headers: authHeaders }),
           fetch('/api/documents', { headers: authHeaders })
@@ -225,6 +227,12 @@ export default function DashboardUtama() {
     return date.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }).toUpperCase();
   };
 
+  const formatDateTimeFull = (dateString: string | null) => {
+    if (!dateString) return 'Tiada Rekod';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ms-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
   const handleLogout = async () => {
     try { await supabase.auth.signOut(); } catch (error) {}
     if (typeof window !== 'undefined') {
@@ -283,8 +291,6 @@ export default function DashboardUtama() {
     return true; 
   });
 
-  // Trik CSS Pintar: Jika ada 4 modul, kita paksa ia jadi saiz lebih besar (2x2 grid). 
-  // Jika 6 modul, ia akan muat jadi 3x2 grid.
   const dynamicGridColumns = allowedMenuItems.length === 4 
     ? 'repeat(auto-fit, minmax(400px, 1fr))' 
     : 'repeat(auto-fit, minmax(280px, 1fr))';
@@ -335,11 +341,13 @@ export default function DashboardUtama() {
               </p>
               <p style={{ margin: 0, fontSize: '0.78rem', color: '#cbd5e1', marginBottom: '6px' }}>{userProfile.faculty}</p>
               
-              <div style={{ backgroundColor: 'rgba(0,0,0,0.25)', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', minWidth: '200px' }}>
-                <div style={{ fontSize: '0.9rem', color: '#ffffff', letterSpacing: '0.5px' }}>
-                  🕒 <strong style={{ color: '#fde047', fontFamily: 'monospace', fontSize: '1rem' }}>{formatTime(currentTime)}</strong>
+              {/* KOTAK MAKLUMAT MASA & SESI */}
+              <div style={{ backgroundColor: 'rgba(0,0,0,0.25)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', minWidth: '220px' }}>
+                <div style={{ fontSize: '0.9rem', color: '#ffffff', letterSpacing: '0.5px', marginBottom: '2px' }}>
+                  🕒 <strong style={{ color: '#fde047', fontFamily: 'monospace', fontSize: '1.05rem' }}>{formatTime(currentTime)}</strong>
                 </div>
-                <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>Sesi Aktif</div>
+                <div style={{ fontSize: '0.68rem', color: '#cbd5e1' }}>Log Masuk: <span style={{color: '#94a3b8'}}>{formatTime(loginTime)}</span></div>
+                <div style={{ fontSize: '0.68rem', color: '#cbd5e1' }}>Log Terakhir: <span style={{color: '#94a3b8'}}>{formatDateTimeFull(userProfile.lastLogin)}</span></div>
               </div>
 
               <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
@@ -381,7 +389,6 @@ export default function DashboardUtama() {
         <div style={{ marginTop: '40px' }}>
           <h2 style={{ color: '#0f172a', marginBottom: '20px', fontSize: '1.3rem', fontWeight: 'bold' }}>Modul Tersedia</h2>
           
-          {/* DIKEMAS KINI: Memanggil gridColumns yang dinamik */}
           <div style={{ display: 'grid', gridTemplateColumns: dynamicGridColumns, gap: '22px', alignItems: 'stretch' }}>
             {allowedMenuItems.map((item) => (
               <Link key={item.id} href={item.link} style={{ textDecoration: 'none', color: 'inherit', display: 'block', height: '100%' }}>
