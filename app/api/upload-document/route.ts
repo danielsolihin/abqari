@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
-// export const dynamic = 'force-static';
+export const dynamic = 'force-dynamic';
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -26,7 +26,6 @@ function splitTextIntoChunks(text: string, chunkSize = 800, overlap = 100): stri
 
 export async function POST(req: NextRequest) {
   try {
-    // LAZY LOADING: Panggil pdf-parse di dalam POST untuk elak ralat DOMMatrix semasa build
     const pdfParse = require('pdf-parse');
 
     const formData = await req.formData();
@@ -48,6 +47,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Gagal mengekstrak teks daripada fail PDF ini.' }, { status: 400 });
     }
 
+    // Rekod dokumen utama ke Supabase
     const { data: docRecord, error: docError } = await supabase
       .from('documents')
       .insert([
@@ -60,7 +60,10 @@ export async function POST(req: NextRequest) {
       .select()
       .single();
 
-    if (docError) throw docError;
+    if (docError) {
+      console.error('Ralat simpan dokumen Supabase:', docError);
+      throw new Error(`Ralat pangkalan data: ${docError.message}`);
+    }
 
     const textChunks = splitTextIntoChunks(extractedText);
     const chunkRecords = [];
@@ -81,7 +84,7 @@ export async function POST(req: NextRequest) {
           (embedResponse as any)?.values ||
           null;
       } catch (err) {
-        console.warn(`Amaran: Gagal jana embedding untuk chunk ${i}:`, err);
+        console.warn(`Amaran: Gagal jana embedding untuk chunk ${i} (menggunakan fallback teks biasa):`, err);
       }
 
       chunkRecords.push({
@@ -96,7 +99,10 @@ export async function POST(req: NextRequest) {
       .from('document_chunks')
       .insert(chunkRecords);
 
-    if (chunkError) throw chunkError;
+    if (chunkError) {
+      console.error('Ralat simpan chunks Supabase:', chunkError);
+      throw new Error(`Ralat menyimpan cebisan teks: ${chunkError.message}`);
+    }
 
     return NextResponse.json({
       success: true,
@@ -121,7 +127,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await query;
     if (error) throw error;
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({ success: true, data: data || [] });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

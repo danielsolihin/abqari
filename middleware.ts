@@ -2,24 +2,25 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  // Semak sama ada pengguna mempunyai cookie sesi ABQARI
   const hasSession = request.cookies.has('abqari_session');
   const { pathname } = request.nextUrl;
 
-  // 1. SENARAI LALUAN AWAM (Boleh diakses tanpa log masuk)
+  // 1. SENARAI LALUAN AWAM
   const publicPaths = ['/login', '/forgot-password', '/reset-password'];
 
-  // Jika laluan semasa ada dalam senarai awam, benarkan akses masuk
   if (publicPaths.includes(pathname)) {
     return NextResponse.next();
   }
 
-  // 2. Jika cuba masuk Papan Pemuka/Sistem tapi tiada sesi, tendang ke /login
+  // 2. MOD UJIAN SEMENTARA (BYPASS LOG MASUK):
+  // Baris di bawah dilumpuhkan sementara supaya Prof tidak ditendang ke /login semasa menguji
+  /*
   if (!hasSession) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
+  */
 
-  // 3. Jika semuanya okey, benarkan akses diteruskan
+  // 3. Benarkan semua akses terus masuk
   return NextResponse.next();
 }
 

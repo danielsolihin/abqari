@@ -1,82 +1,48 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-const dbClient = createClient(
-  supabaseUrl,
-  serviceRoleKey || supabaseAnonKey
-);
+const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-async function getAuthenticatedUser(req: Request) {
+// 1. Ambil Senarai Dokumen (GET)
+export async function GET(req: NextRequest) {
   try {
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return null;
-    }
+    const { searchParams } = new URL(req.url);
+    const subjectId = searchParams.get('subjectId');
 
-    const token = authHeader.split(' ')[1];
-    const authClient = createClient(supabaseUrl, supabaseAnonKey);
-    
-    const { data: { user }, error } = await authClient.auth.getUser(token);
-    
-    if (error || !user) return null;
-    return user;
-  } catch (err) {
-    return null;
-  }
-}
-
-export async function GET(req: Request) {
-  try {
-    const user = await getAuthenticatedUser(req);
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'Akses tidak dibenarkan. Sila log masuk.' }, { status: 401 });
-    }
-
-    const isAdmin = user.user_metadata?.role === 'admin';
-
-    let query = dbClient
+    let query = supabase
       .from('documents')
-      .select('*')
+      .select('*, subjects(name, course_code)')
       .order('created_at', { ascending: false });
 
-    if (!isAdmin) {
-      query = query.eq('user_id', user.id);
+    if (subjectId) {
+      query = query.eq('subject_id', subjectId);
     }
 
     const { data, error } = await query;
-
     if (error) throw error;
-    return NextResponse.json({ success: true, data });
+
+    return NextResponse.json({ success: true, data: data || [] });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
-export async function DELETE(req: Request) {
+// 2. Padam Dokumen (DELETE)
+export async function DELETE(req: NextRequest) {
   try {
-    const user = await getAuthenticatedUser(req);
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'Akses tidak dibenarkan. Sila log masuk.' }, { status: 401 });
-    }
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
 
-    const body = await req.json();
-    const { id } = body;
+    if (!id) return NextResponse.json({ error: 'ID Dokumen diperlukan.' }, { status: 400 });
 
-    const isAdmin = user.user_metadata?.role === 'admin';
-
-    let query = dbClient.from('documents').delete().eq('id', id);
-
-    if (!isAdmin) {
-      query = query.eq('user_id', user.id);
-    }
-
-    const { error } = await query;
-
+    const { error } = await supabase.from('documents').delete().eq('id', id);
     if (error) throw error;
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

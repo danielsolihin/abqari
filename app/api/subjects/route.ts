@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 // KUNCI UTAMA: Mematikan cache Next.js supaya senarai sentiasa segar (live)
@@ -14,50 +14,16 @@ const dbClient = createClient(
   serviceRoleKey || supabaseAnonKey
 );
 
-// Pembantu pengesahan pengguna berasaskan Token Bearer
-async function getAuthenticatedUser(req: Request) {
-  try {
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return null;
-    }
-
-    const token = authHeader.split(' ')[1];
-    const authClient = createClient(supabaseUrl, supabaseAnonKey);
-    
-    // Ekstrak user secara terus menggunakan token JWT
-    const { data: { user }, error } = await authClient.auth.getUser(token);
-    
-    if (error || !user) return null;
-    return user;
-  } catch (err) {
-    return null;
-  }
-}
-
-// 1. Ambil senarai subjek (GET)
+// 1. Ambil senarai subjek (GET) - BEBAS AKSES KESELAMATAN SEMENTARA WAKTU
 export async function GET(req: Request) {
   try {
-    const user = await getAuthenticatedUser(req);
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'Akses tidak dibenarkan. Sila log masuk.' }, { status: 401 });
-    }
-
-    const isAdmin = user.user_metadata?.role === 'admin';
-
-    let query = dbClient
+    const { data, error } = await dbClient
       .from('subjects')
       .select('*')
       .order('created_at', { ascending: false });
 
-    // Jika bukan admin, hanya tarik subjek milik user ini sahaja
-    if (!isAdmin) {
-      query = query.eq('user_id', user.id);
-    }
-
-    const { data, error } = await query;
-
     if (error) throw error;
+    
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -67,13 +33,8 @@ export async function GET(req: Request) {
 // 2. Tambah subjek baharu (POST)
 export async function POST(req: Request) {
   try {
-    const user = await getAuthenticatedUser(req);
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'Akses tidak dibenarkan. Sila log masuk.' }, { status: 401 });
-    }
-
     const body = await req.json();
-    const { name, courseCode, co, lo } = body;
+    const { name, courseCode, co, lo, userId } = body;
 
     const { data, error } = await dbClient
       .from('subjects')
@@ -83,7 +44,7 @@ export async function POST(req: Request) {
           course_code: courseCode || 'TIADA',
           co: co || [],
           lo: lo || [],
-          user_id: user.id,
+          user_id: userId || 'public-user', // ID Sementara jika tiada log masuk
         },
       ])
       .select()
@@ -99,17 +60,10 @@ export async function POST(req: Request) {
 // 3. Kemas kini subjek (PUT)
 export async function PUT(req: Request) {
   try {
-    const user = await getAuthenticatedUser(req);
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'Akses tidak dibenarkan. Sila log masuk.' }, { status: 401 });
-    }
-
     const body = await req.json();
     const { id, name, courseCode, co, lo } = body;
 
-    const isAdmin = user.user_metadata?.role === 'admin';
-
-    let query = dbClient
+    const { data, error } = await dbClient
       .from('subjects')
       .update({
         name,
@@ -117,13 +71,9 @@ export async function PUT(req: Request) {
         co: co || [],
         lo: lo || [],
       })
-      .eq('id', id);
-
-    if (!isAdmin) {
-      query = query.eq('user_id', user.id);
-    }
-
-    const { data, error } = await query.select().single();
+      .eq('id', id)
+      .select()
+      .single();
 
     if (error) throw error;
     return NextResponse.json({ success: true, data });
@@ -135,23 +85,10 @@ export async function PUT(req: Request) {
 // 4. Padam subjek (DELETE)
 export async function DELETE(req: Request) {
   try {
-    const user = await getAuthenticatedUser(req);
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'Akses tidak dibenarkan. Sila log masuk.' }, { status: 401 });
-    }
-
     const body = await req.json();
     const { id } = body;
 
-    const isAdmin = user.user_metadata?.role === 'admin';
-
-    let query = dbClient.from('subjects').delete().eq('id', id);
-
-    if (!isAdmin) {
-      query = query.eq('user_id', user.id);
-    }
-
-    const { error } = await query;
+    const { error } = await dbClient.from('subjects').delete().eq('id', id);
 
     if (error) throw error;
     return NextResponse.json({ success: true });

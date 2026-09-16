@@ -467,7 +467,12 @@ export default function PenjanaSoalanPage() {
            } else {
               setGeneratedQuestions(fullText); setGeneratedScheme("Sila salin skema secara manual.");
            }
-        } else setGeneratedQuestions(`Ralat: ${json.error}`);
+        } else {
+            // PENAPIS TAMBAHAN: Buang perkataan 'bertaraf universiti' terus di frontend sebagai langkah keselamatan
+            let errMsg = json.error || 'Gagal menjana soalan.';
+            errMsg = errMsg.replace(' bertaraf universiti', '').replace('bertaraf universiti', '');
+            setGeneratedQuestions(`Ralat: ${errMsg}`);
+        }
         setIsGenerating(false);
       }, 800);
     } catch (error) { clearInterval(progressInterval); setIsGenerating(false); }
@@ -766,7 +771,8 @@ export default function PenjanaSoalanPage() {
                 </div>
               </div>
             ) : generatedQuestions ? (
-              <div style={{ flex: 1, whiteSpace: 'pre-wrap', fontFamily: '"Times New Roman", Times, serif', fontSize: '1.1rem', color: '#000000', backgroundColor: '#ffffff', padding: '40px 50px', borderRadius: '4px', border: '1px solid #cbd5e1', overflowY: 'auto', boxShadow: '0 0 15px rgba(0,0,0,0.05) inset', lineHeight: '1.6' }}>
+              // DIKEMAS KINI: Menambah textAlign secara kondisional. Jika ralat, ia akan justify. Jika soalan biasa, ia kekal left.
+              <div style={{ flex: 1, whiteSpace: 'pre-wrap', fontFamily: '"Times New Roman", Times, serif', fontSize: '1.1rem', color: '#000000', backgroundColor: '#ffffff', padding: '40px 50px', borderRadius: '4px', border: '1px solid #cbd5e1', overflowY: 'auto', boxShadow: '0 0 15px rgba(0,0,0,0.05) inset', lineHeight: '1.6', textAlign: generatedQuestions.startsWith('Ralat:') ? 'justify' : 'left' }}>
                   <div style={{ marginBottom: '50px'}}>{generatedQuestions}</div>
                   {generatedScheme && (
                       <div style={{ borderTop: '2px dashed #94a3b8', paddingTop: '30px' }}>

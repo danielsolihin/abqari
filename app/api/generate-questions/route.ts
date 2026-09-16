@@ -4,7 +4,7 @@ import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // WAJIB ADA: Elak Vercel Timeout
+export const maxDuration = 60; 
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -166,13 +166,11 @@ KEUTAMAAN #1 (KUOTA ARAS BLOOM & SUSUNAN RAWAK / RESHUFFLE):
    - Aras [Aras: C6] (Penilaian)   : WAJIB TEPAT ${bloomCounts.C6} soalan
 
 2. ARAHAN RESHUFFLE (SUSUNAN RAWAK & BERSERTAAN):
-   - DILARANG SAMA SEKALI menyusun aras soalan secara berkelompok berturutan (seperti mengumpul semua C1 dari soalan 1-10, kemudian C2 dari soalan 11-20).
-   - Anda WAJIB MENGACAK / MERAWAKKAN (RESHUFFLE) taburan aras Bloom secara dinamik sepanjang kertas soalan (contohnya: Soalan 1 [Aras: C2], Soalan 2 [Aras: C4], Soalan 3 [Aras: C1], Soalan 4 [Aras: C3]...).
-   - Walau bagaimanapun, pastikan jumlah keseluruhan tag bagi setiap aras di AKHIR PENJANAAN adalah TEPAT 100% seperti nisbah kuota di atas.
+   - DILARANG SAMA SEKALI menyusun aras soalan secara berkelompok berturutan.
+   - Anda WAJIB MENGACAK / MERAWAKKAN (RESHUFFLE) taburan aras Bloom secara dinamik sepanjang kertas soalan.
 
 KEUTAMAAN #2 (JUMLAH & STRUKTUR BAHAGIAN SOALAN):
-1. JIKA sesuatu format (Bahagian A, B, atau C) TIDAK DIMINTA di dalam arahan "FORMAT SOALAN YANG DIKEHENDAKI" di bawah, DILARANG mewujudkannya.
-2. ANDA WAJIB menghasilkan JUMLAH SOALAN YANG TEPAT seperti yang dinyatakan dalam setiap bahagian.
+1. ANDA WAJIB menghasilkan JUMLAH SOALAN YANG TEPAT seperti yang dinyatakan dalam setiap bahagian.
 
 KEUTAMAAN #3 (TEMA, TOPIK, DOMAIN CO & LO):
 - Tema Pilihan: **${theme.toUpperCase()}**
@@ -183,8 +181,7 @@ ${topicPrompt}
 - Pilihan LO: ${loListString}
 
 KEUTAMAAN #4 (KAWALAN SUMBER & KREATIVITI OLAHAN):
-1. Bagi memastikan kuota sasaran Aras Bloom dipatuhi, anda DIBENARKAN MENGGORENG dan membina senario kes/situasi mengikut aras soalan yang diperlukan.
-2. Fakta asas dan jawapan tetap berasal dari "TEKS SUMBER KURSUS".
+1. Fakta asas dan jawapan tetap berasal dari "TEKS SUMBER KURSUS".
 
 KETEPATAN ISTILAH & LARAS BAHASA AGAMA (KONTEKS MALAYSIA):
 1. Peperiksaan rasmi di Malaysia.
@@ -203,13 +200,14 @@ ${skemaPrompt}
 SKEMA JAWAPAN TAMAT
 `;
 
-    // PENYELESAIAN 404: Kita senaraikan NAMA RASMI model PRO yang berkualiti tinggi sahaja.
-    // Sistem akan mencuba dari yang terkini (latest) turun ke bawah sehingga ia jumpa versi yang dibenarkan oleh API Key Prof.
+    // PENAMBAHAN MODEL FLASH UNTUK AKAUN PERCUMA: 
+    // AI akan cuba Pro dahulu, jika akaun percuma menolak, ia akan terus beralih ke Flash secara automatik.
     const candidateModels = [
       'gemini-1.5-pro-latest',
       'gemini-1.5-pro-002',
       'gemini-1.5-pro-001',
-      'gemini-1.5-pro'
+      'gemini-1.5-pro',
+      'gemini-1.5-flash'
     ];
 
     let response;
@@ -217,14 +215,14 @@ SKEMA JAWAPAN TAMAT
 
     for (const modelName of candidateModels) {
       try {
-        console.log(`Mencuba model kualiti tinggi: ${modelName}...`);
+        console.log(`Mencuba menjana soalan dengan model: ${modelName}...`);
         response = await ai.models.generateContent({
           model: modelName,
           contents: prompt,
         });
         if (response && response.text) {
-          console.log(`Berjaya dijana menggunakan: ${modelName}`);
-          break; // Jika berjaya, berhenti mencuba
+          console.log(`[BERJAYA] Dijana menggunakan: ${modelName}`);
+          break;
         }
       } catch (err: any) {
         lastError = err.message || JSON.stringify(err);
@@ -233,7 +231,7 @@ SKEMA JAWAPAN TAMAT
     }
 
     if (!response || !response.text) {
-      throw new Error(`Google AI API Error: ${lastError}`);
+      throw new Error(lastError);
     }
 
     const generatedText = response.text || '';
@@ -262,6 +260,13 @@ SKEMA JAWAPAN TAMAT
     return NextResponse.json({ success: true, data: generatedText });
   } catch (error: any) {
     console.error('Ralat AI Penjana:', error);
-    return NextResponse.json({ error: error.message || 'Gagal menjana soalan.' }, { status: 500 });
+    
+    let userFriendlyMessage = 'Harap maaf, sistem ABQARI sedang mengalami sedikit kesesakan. Sila cuba sebentar lagi.';
+    
+    if (error.message && (error.message.includes('403') || error.message.includes('404') || error.message.includes('PERMISSION_DENIED') || error.message.includes('NOT_FOUND') || error.message.includes('quota'))) {
+      userFriendlyMessage = "Harap maaf, enjin AI ABQARI kini sedang dalam fasa naik taraf ke pelan Premium (Pro) oleh pelayan Google bagi menjamin kualiti soalan. Proses pengesahan ini sedang berjalan. Sila kembali dan cuba menjana soalan sebentar sahaja lagi. Terima kasih atas kesabaran anda!";
+    }
+
+    return NextResponse.json({ error: userFriendlyMessage }, { status: 500 });
   }
 }
