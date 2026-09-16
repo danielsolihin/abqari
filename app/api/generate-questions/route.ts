@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 
+// -------------------------------------------------------------------
+// TETAPAN PENTING: Paksa Vercel beri masa maksimum (60 saat) 
+// untuk membolehkan AI membaca nota tebal & menjana soalan berkualiti
+// -------------------------------------------------------------------
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Had maksimum untuk akaun Vercel Hobby (Percuma)
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -57,9 +62,8 @@ export async function POST(req: NextRequest) {
 
     try {
       const queryEmbedResponse = await ai.models.embedContent({
-        model: 'gemini-embedding-001',
+        model: 'text-embedding-004',
         contents: `${queryTopicText} ${THEME_KEYWORDS[theme] || ''}`,
-        config: { outputDimensionality: 768 },
       });
 
       const queryVector =
@@ -77,10 +81,12 @@ export async function POST(req: NextRequest) {
         });
 
         scoredChunks.sort((a, b) => b.score - a.score);
-        relevantChunks = scoredChunks.slice(0, 15);
+        // KUALITI MAKSIMUM: Menggunakan 20 kepingan teks (Chunks) paling relevan (Hampir 3-4 muka surat padat)
+        relevantChunks = scoredChunks.slice(0, 20);
       }
     } catch (embedError) {
-      console.warn('Amaran: Gagal melaksanakan carian vektor, menggunakan mod fail-safe:', embedError);
+      console.warn('Amaran: Gagal carian vektor, guna fallback chunks:', embedError);
+      relevantChunks = chunks.slice(0, 20);
     }
 
     const contextText = relevantChunks.map(c => c.content).join('\n\n');
@@ -163,13 +169,11 @@ KEUTAMAAN #1 (KUOTA ARAS BLOOM & SUSUNAN RAWAK / RESHUFFLE):
    - Aras [Aras: C6] (Penilaian)   : WAJIB TEPAT ${bloomCounts.C6} soalan
 
 2. ARAHAN RESHUFFLE (SUSUNAN RAWAK & BERSERTAAN):
-   - DILARANG SAMA SEKALI menyusun aras soalan secara berkelompok berturutan (seperti mengumpul semua C1 dari soalan 1-10, kemudian C2 dari soalan 11-20).
-   - Anda WAJIB MENGACAK / MERAWAKKAN (RESHUFFLE) taburan aras Bloom secara dinamik sepanjang kertas soalan (contohnya: Soalan 1 [Aras: C2], Soalan 2 [Aras: C4], Soalan 3 [Aras: C1], Soalan 4 [Aras: C3]...).
-   - Walau bagaimanapun, pastikan jumlah keseluruhan tag bagi setiap aras di AKHIR PENJANAAN adalah TEPAT 100% seperti nisbah kuota di atas.
+   - DILARANG SAMA SEKALI menyusun aras soalan secara berkelompok berturutan.
+   - Anda WAJIB MENGACAK / MERAWAKKAN (RESHUFFLE) taburan aras Bloom secara dinamik sepanjang kertas soalan.
 
 KEUTAMAAN #2 (JUMLAH & STRUKTUR BAHAGIAN SOALAN):
-1. JIKA sesuatu format (Bahagian A, B, atau C) TIDAK DIMINTA di dalam arahan "FORMAT SOALAN YANG DIKEHENDAKI" di bawah, DILARANG mewujudkannya.
-2. ANDA WAJIB menghasilkan JUMLAH SOALAN YANG TEPAT seperti yang dinyatakan dalam setiap bahagian.
+1. ANDA WAJIB menghasilkan JUMLAH SOALAN YANG TEPAT seperti yang dinyatakan.
 
 KEUTAMAAN #3 (TEMA, TOPIK, DOMAIN CO & LO):
 - Tema Pilihan: **${theme.toUpperCase()}**
@@ -179,13 +183,8 @@ ${topicPrompt}
 - Pilihan Domain: ${coListString}
 - Pilihan LO: ${loListString}
 
-KEUTAMAAN #4 (KAWALAN SUMBER & KREATIVITI OLAHAN):
-1. Bagi memastikan kuota sasaran Aras Bloom dipatuhi, anda DIBENARKAN MENGGORENG dan membina senario kes/situasi mengikut aras soalan yang diperlukan.
-2. Fakta asas dan jawapan tetap berasal dari "TEKS SUMBER KURSUS".
-
-KETEPATAN ISTILAH & LARAS BAHASA AGAMA (KONTEKS MALAYSIA):
-1. Peperiksaan rasmi di Malaysia.
-2. Gunakan "Al-Quran" apabila merujuk kitab suci secara khusus.
+KEUTAMAAN #4 (KAWALAN SUMBER & FAKTA MUTLAK):
+1. Fakta asas dan jawapan MESTI berasal 100% HANYA dari "TEKS SUMBER KURSUS". Dilarang mereka cipta fakta luar.
 
 FORMAT SOALAN YANG DIKEHENDAKI:
 ${formatPrompt}
@@ -200,34 +199,28 @@ ${skemaPrompt}
 SKEMA JAWAPAN TAMAT
 `;
 
-    // -------------------------------------------------------------
-    // SISTEM FALLBACK 3 PERINGKAT DENGAN MASA BERTENANG (DELAY)
-    // -------------------------------------------------------------
     let response;
-    const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+    let lastError = '';
 
-    try {
-      // Pelan A: Model utama (gemini-1.5-pro)
-      response = await ai.models.generateContent({ model: 'gemini-1.5-pro', contents: prompt });
-    } catch (errA: any) {
-      console.warn(`[Pelan A Gagal]: ${errA.message}. Bertenang 2 saat...`);
-      await delay(2000); // Masa bertenang supaya pelayan tidak sekat kerana spam
-      
+    // UTAMAKAN MODEL 'PRO' UNTUK KUALITI TINGGI (TIADA KOMPROMI)
+    const candidateModels = ['gemini-1.5-pro', 'gemini-1.5-flash'];
+
+    for (const modelName of candidateModels) {
       try {
-        // Pelan B: Model pantas (gemini-1.5-flash)
-        response = await ai.models.generateContent({ model: 'gemini-1.5-flash', contents: prompt });
-      } catch (errB: any) {
-        console.warn(`[Pelan B Gagal]: ${errB.message}. Bertenang 2 saat...`);
-        await delay(2000);
-
-        try {
-          // Pelan C: Model paling ringan, laju & kebal jem (gemini-1.5-flash-8b)
-          response = await ai.models.generateContent({ model: 'gemini-1.5-flash-8b', contents: prompt });
-        } catch (errC: any) {
-          console.error('[Semua Pelan Gagal]:', errC);
-          throw new Error('Sistem AI Google sedang mengalami kesesakan kritikal pada waktu ini. Sila cuba lagi selepas beberapa minit.');
-        }
+        console.log(`Mencuba penjanaan dengan model kualiti tinggi: ${modelName}...`);
+        response = await ai.models.generateContent({ 
+          model: modelName, 
+          contents: prompt 
+        });
+        if (response && response.text) break;
+      } catch (err: any) {
+        lastError = err.message || JSON.stringify(err);
+        console.warn(`[Model ${modelName} Gagal]: ${lastError}`);
       }
+    }
+
+    if (!response || !response.text) {
+      throw new Error(`Google AI API Error: ${lastError || 'Gagal mendapat respon, kemungkinan kuota API penuh atau server Google sedang sibuk.'}`);
     }
 
     const generatedText = response.text || '';
