@@ -71,20 +71,28 @@ export default function LoginPage() {
       }}>
         <div style={{ position: 'relative', zIndex: 1, maxWidth: '500px', margin: '0 auto' }}>
           
-          <img 
-            src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Logo_UiTM_%28Universiti_Teknologi_MARA%29.svg/1024px-Logo_UiTM_%28Universiti_Teknologi_MARA%29.svg.png" 
-            alt="Logo UiTM" 
-            style={{ 
-              width: '180px', 
-              marginBottom: '25px', 
-              filter: 'brightness(0) invert(1)',
-              opacity: 0.95
-            }} 
-          />
-
+          {/* DIKEMAS KINI: Ruang bawah (marginBottom) dikurangkan kepada 12px */}
+          <div style={{ 
+            backgroundColor: 'rgba(255, 255, 255, 0.85)', 
+            backdropFilter: 'blur(5px)',
+            padding: '12px 20px', 
+            borderRadius: '12px', 
+            display: 'inline-block',
+            marginBottom: '12px', 
+            boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
+          }}>
+            <img 
+              src="/uitm-logo.png" 
+              alt="Logo UiTM" 
+              style={{ 
+                width: '180px', 
+                display: 'block'
+              }} 
+            />
+          </div>
           <div>
             <div style={{ display: 'inline-block', backgroundColor: 'rgba(255,255,255,0.1)', padding: '10px 20px', borderRadius: '30px', border: '1px solid rgba(255,255,255,0.2)', marginBottom: '20px', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '1px' }}>
-              UITM SHAH ALAM
+              ACIS, UITM SHAH ALAM
             </div>
           </div>
           
