@@ -4,7 +4,6 @@ import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic'; // Memastikan enjin API serverless berjalan live di Vercel
-export const maxDuration = 60; // WAJIB ADA: Memberi masa maksimum supaya Vercel tidak "Timeout" semasa AI berfikir
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -203,9 +202,8 @@ ${skemaPrompt}
 SKEMA JAWAPAN TAMAT
 `;
 
-    // DIKEMASKINI HANYA DI SINI: Menggunakan model premium "gemini-1.5-pro" yang sah dan wujud
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-pro',
+      model: 'gemini-3.6-flash',
       contents: prompt,
     });
 
