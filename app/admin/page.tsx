@@ -9,13 +9,6 @@ const P_LIST = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'];
 const A_LIST = ['A1', 'A2', 'A3', 'A4', 'A5'];
 const LO_LIST = ['LO1', 'LO2', 'LO3', 'LO4', 'LO5', 'LO6', 'LO7', 'LO8', 'LO9', 'LO10', 'LO11'];
 
-// DATA SIMULASI PENGGUNA SISTEM
-const DUMMY_USERS = [
-  { id: 'USR-001', name: 'Prof. Dr. Ahmad Fakhruddin', email: 'ahmadf@uitm.edu.my', role: 'Admin', department: 'Fakulti Pengajian Islam (FPI)' },
-  { id: 'USR-002', name: 'Dr. Siti Nurhaliza', email: 'sitinur@uitm.edu.my', role: 'Pensyarah', department: 'Fakulti Pengajian Islam (FPI)' },
-  { id: 'USR-003', name: 'Ustaz Don Daniyal', email: 'dondaniyal@uitm.edu.my', role: 'Pensyarah', department: 'Akademi Pengajian Islam Kontemporari (ACIS)' }
-];
-
 export default function AdminDashboardPage() {
   // ==========================================
   // STATE: DOKUMEN & SUBJEK (DIKEKALKAN 100%)
@@ -42,12 +35,13 @@ export default function AdminDashboardPage() {
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
 
   // ==========================================
-  // STATE: PENGURUSAN PENGGUNA
+  // STATE: PENGURUSAN PENGGUNA (REAL DATABASE)
   // ==========================================
-  const [users, setUsers] = useState<any[]>(DUMMY_USERS);
+  const [users, setUsers] = useState<any[]>([]);
+  const [isUsersLoading, setIsUsersLoading] = useState(true);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
   
-  // STATE BAHARU: Untuk Melihat Profil Pengguna
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   
@@ -83,9 +77,26 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // FETCH PENGGUNA SEBENAR
+  const fetchUsers = async () => {
+    setIsUsersLoading(true);
+    try {
+      const res = await fetch('/api/admin/users');
+      const json = await res.json();
+      if (json.success) {
+        setUsers(json.data);
+      }
+    } catch (error) {
+      console.error('Ralat mengambil senarai pengguna:', error);
+    } finally {
+      setIsUsersLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchDocuments();
     fetchSubjects();
+    fetchUsers(); // Panggil data pengguna bila admin masuk ke halaman ini
   }, []);
 
   const toggleCO = (itemValue: string) => {
@@ -247,48 +258,82 @@ export default function AdminDashboardPage() {
   };
 
   // ==========================================
-  // FUNGSI: PENGURUSAN PENGGUNA
+  // FUNGSI: PENGURUSAN PENGGUNA SEBENAR
   // ==========================================
-  const handleSaveUser = (e: React.FormEvent) => {
+  const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUserName || !newUserEmail || !newUserDept || !newUserPassword) {
       return alert('Sila lengkapkan semua maklumat pendaftaran pengguna.');
     }
     
-    // Simulasikan pendaftaran pengguna
-    const newUser = {
-      id: `USR-00${users.length + 1}`,
-      name: newUserName,
-      email: newUserEmail,
-      role: newUserRole,
-      department: newUserDept
-    };
+    if (newUserPassword.length < 6) {
+      return alert('Kata laluan mesti mengandungi sekurang-kurangnya 6 aksara.');
+    }
 
-    setUsers([...users, newUser]);
-    alert('Pengguna baharu berjaya didaftarkan ke dalam sistem!');
-    
-    setNewUserName(''); setNewUserEmail(''); setNewUserRole('Pensyarah'); setNewUserDept(''); setNewUserPassword('');
-    setIsUserModalOpen(false);
+    setIsCreatingUser(true);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: newUserEmail,
+          password: newUserPassword,
+          name: newUserName,
+          role: newUserRole.toLowerCase(), // simpan sebagai 'admin' atau 'pensyarah'
+          faculty: newUserDept
+        })
+      });
+
+      const json = await res.json();
+      
+      if (res.ok && json.success) {
+        alert('Alhamdulillah! Pengguna baharu berjaya didaftarkan ke dalam sistem.');
+        fetchUsers(); // Refresh senarai pengguna
+        setNewUserName(''); setNewUserEmail(''); setNewUserRole('Pensyarah'); setNewUserDept(''); setNewUserPassword('');
+        setIsUserModalOpen(false);
+      } else {
+        alert(`Gagal mendaftar pengguna: ${json.error || 'Emel mungkin telah digunakan.'}`);
+      }
+    } catch (err) {
+      alert('Berlaku masalah penyambungan pelayan semasa mendaftar pengguna.');
+    } finally {
+      setIsCreatingUser(false);
+    }
   };
 
-  const handleDeleteUser = (id: string) => {
-    if (id === 'USR-001') {
-      return alert('AMARAN: Anda tidak boleh memadam akaun Master Admin (Diri Sendiri).');
+  const handleDeleteUser = async (id: string, role: string) => {
+    if (role === 'admin') {
+      return alert('AMARAN: Anda tidak boleh memadam akaun rakan Pentadbir (Admin) dari halaman ini untuk mengelakkan risiko terkunci.');
     }
-    if (confirm('Adakah anda pasti mahu memadam akaun pengguna ini? Tindakan ini akan membatalkan akses mereka ke sistem ABQARI.')) {
-      setUsers(users.filter(user => user.id !== id));
-      alert('Akaun pengguna telah berjaya dipadamkan.');
+
+    if (!confirm('Adakah anda pasti mahu memadam akaun pensyarah ini secara KEKAL? Tindakan ini tidak boleh dikembalikan.')) return;
+
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: id })
+      });
+
+      const json = await res.json();
+      if (res.ok && json.success) {
+        alert('Akaun pengguna telah berjaya dipadamkan.');
+        fetchUsers(); // Refresh jadual
+      } else {
+        alert(`Gagal memadam pengguna: ${json.error}`);
+      }
+    } catch (err) {
+      alert('Berlaku masalah penyambungan pelayan.');
     }
   };
 
-  // FUNGSI BAHARU: Lihat Profil Pengguna
   const handleViewUser = (user: any) => {
     setSelectedUser(user);
     setIsUserProfileModalOpen(true);
   };
 
   // ==========================================
-  // GAYA UI: TEMA ADMIN (Hitam/Merah Gelap)
+  // GAYA UI: TEMA ADMIN
   // ==========================================
   const styles = {
     page: { backgroundColor: '#f1f5f9', minHeight: '100vh', fontFamily: '"Inter", "Segoe UI", sans-serif', position: 'relative' as 'relative', paddingBottom: '50px' },
@@ -359,6 +404,9 @@ export default function AdminDashboardPage() {
           </div>
 
           <div style={{ overflowX: 'auto' }}>
+            {isUsersLoading ? (
+               <p style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>Memuat turun data profil pensyarah...</p>
+            ) : (
             <table style={styles.table}>
               <thead>
                 <tr>
@@ -371,25 +419,24 @@ export default function AdminDashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {users.map((usr) => (
+                {users.map((usr, idx) => (
                   <tr key={usr.id}>
-                    <td style={{ fontWeight: '700', color: '#64748b' }}>{usr.id}</td>
+                    <td style={{ fontWeight: '700', color: '#64748b' }}>{`USR-${String(idx + 1).padStart(3, '0')}`}</td>
                     <td style={{ fontWeight: '700', color: '#0f172a' }}>{usr.name}</td>
                     <td style={{ color: '#475569' }}>{usr.email}</td>
-                    <td style={{ color: '#475569' }}>{usr.department}</td>
+                    <td style={{ color: '#475569' }}>{usr.faculty}</td>
                     <td style={{ textAlign: 'center' }}>
                       <span style={{ 
                         padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: '800',
-                        backgroundColor: usr.role === 'Admin' ? '#fee2e2' : '#eff6ff',
-                        color: usr.role === 'Admin' ? '#b91c1c' : '#1d4ed8',
-                        border: usr.role === 'Admin' ? '1px solid #fca5a5' : '1px solid #93c5fd'
+                        backgroundColor: usr.role === 'admin' ? '#fee2e2' : '#eff6ff',
+                        color: usr.role === 'admin' ? '#b91c1c' : '#1d4ed8',
+                        border: usr.role === 'admin' ? '1px solid #fca5a5' : '1px solid #93c5fd'
                       }}>
-                        {usr.role}
+                        {usr.role === 'admin' ? 'Admin' : 'Pensyarah'}
                       </span>
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                        {/* BUTANG LIHAT PROFIL BAHARU */}
                         <button 
                           style={styles.btnPrimarySmall} 
                           onClick={() => handleViewUser(usr)}
@@ -399,11 +446,10 @@ export default function AdminDashboardPage() {
                           👁️ Lihat
                         </button>
                         <button 
-                          style={styles.btnDeleteSmall} 
-                          onClick={() => handleDeleteUser(usr.id)}
-                          disabled={usr.id === 'USR-001'} // Disable untuk Master Admin
-                          onMouseOver={(e) => { if(usr.id !== 'USR-001') e.currentTarget.style.backgroundColor = '#fee2e2' }}
-                          onMouseOut={(e) => { if(usr.id !== 'USR-001') e.currentTarget.style.backgroundColor = '#fef2f2' }}
+                          style={{...styles.btnDeleteSmall, opacity: usr.role === 'admin' ? 0.4 : 1, cursor: usr.role === 'admin' ? 'not-allowed' : 'pointer'}} 
+                          onClick={() => handleDeleteUser(usr.id, usr.role)}
+                          disabled={usr.role === 'admin'}
+                          title={usr.role === 'admin' ? 'Tidak boleh dipadam' : 'Padam Pensyarah'}
                         >
                           Padam
                         </button>
@@ -413,6 +459,7 @@ export default function AdminDashboardPage() {
                 ))}
               </tbody>
             </table>
+            )}
           </div>
         </div>
 
@@ -536,7 +583,7 @@ export default function AdminDashboardPage() {
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.85rem', color: '#334155' }}>Kata Laluan <span style={{color: '#ef4444'}}>*</span></label>
-                  <input type="password" required value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="Kata Laluan Sementara" style={styles.input} />
+                  <input type="password" required value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="Minimum 6 Aksara" style={styles.input} />
                 </div>
               </div>
 
@@ -547,7 +594,9 @@ export default function AdminDashboardPage() {
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button type="button" onClick={() => setIsUserModalOpen(false)} style={{ backgroundColor: 'transparent', border: '1px solid #cbd5e1', padding: '10px 20px', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', color: '#475569' }}>Batal</button>
-                <button type="submit" style={styles.btnSuccess}>💾 Cipta Akaun</button>
+                <button type="submit" disabled={isCreatingUser} style={{...styles.btnSuccess, opacity: isCreatingUser ? 0.7 : 1}}>
+                  {isCreatingUser ? 'Mendaftar...' : '💾 Cipta Akaun'}
+                </button>
               </div>
             </form>
           </div>
@@ -572,7 +621,7 @@ export default function AdminDashboardPage() {
                  </div>
                  <div>
                    <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#0f172a', fontWeight: '800' }}>{selectedUser.name}</h3>
-                   <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>ID: {selectedUser.id}</p>
+                   <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>ID: {selectedUser.id.substring(0,8)}</p>
                  </div>
               </div>
               
@@ -583,17 +632,17 @@ export default function AdminDashboardPage() {
                 </div>
                 <div style={{ marginBottom: '15px' }}>
                   <p style={{ margin: '0 0 4px 0', fontSize: '0.8rem', color: '#64748b', fontWeight: '700' }}>Jabatan / Fakulti:</p>
-                  <p style={{ margin: 0, fontSize: '0.95rem', color: '#0f172a', fontWeight: '500' }}>{selectedUser.department}</p>
+                  <p style={{ margin: 0, fontSize: '0.95rem', color: '#0f172a', fontWeight: '500' }}>{selectedUser.faculty}</p>
                 </div>
                 <div>
                   <p style={{ margin: '0 0 6px 0', fontSize: '0.8rem', color: '#64748b', fontWeight: '700' }}>Tahap Peranan Akses:</p>
                   <span style={{ 
                       display: 'inline-block', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: '800',
-                      backgroundColor: selectedUser.role === 'Admin' ? '#fee2e2' : '#eff6ff',
-                      color: selectedUser.role === 'Admin' ? '#b91c1c' : '#1d4ed8',
-                      border: selectedUser.role === 'Admin' ? '1px solid #fca5a5' : '1px solid #93c5fd'
+                      backgroundColor: selectedUser.role === 'admin' ? '#fee2e2' : '#eff6ff',
+                      color: selectedUser.role === 'admin' ? '#b91c1c' : '#1d4ed8',
+                      border: selectedUser.role === 'admin' ? '1px solid #fca5a5' : '1px solid #93c5fd'
                     }}>
-                      {selectedUser.role === 'Admin' ? '🛡️ Pentadbir (Admin)' : '🎓 Pensyarah Biasa'}
+                      {selectedUser.role === 'admin' ? '🛡️ Pentadbir (Admin)' : '🎓 Pensyarah Biasa'}
                   </span>
                 </div>
               </div>
