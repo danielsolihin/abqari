@@ -3,8 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic'; // Memastikan enjin API serverless berjalan live di Vercel
-export const maxDuration = 60; // WAJIB ADA: Memberi masa maksimum supaya Vercel tidak "Timeout"
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // WAJIB ADA: Elak Vercel Timeout
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -203,11 +203,38 @@ ${skemaPrompt}
 SKEMA JAWAPAN TAMAT
 `;
 
-    // DIKEMASKINI HANYA DI SINI: Menggunakan model kualiti tinggi gemini-1.5-pro
-    const response = await ai.models.generateContent({
-      model: 'gemini-1.5-pro',
-      contents: prompt,
-    });
+    // PENYELESAIAN 404: Kita senaraikan NAMA RASMI model PRO yang berkualiti tinggi sahaja.
+    // Sistem akan mencuba dari yang terkini (latest) turun ke bawah sehingga ia jumpa versi yang dibenarkan oleh API Key Prof.
+    const candidateModels = [
+      'gemini-1.5-pro-latest',
+      'gemini-1.5-pro-002',
+      'gemini-1.5-pro-001',
+      'gemini-1.5-pro'
+    ];
+
+    let response;
+    let lastError = '';
+
+    for (const modelName of candidateModels) {
+      try {
+        console.log(`Mencuba model kualiti tinggi: ${modelName}...`);
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+        });
+        if (response && response.text) {
+          console.log(`Berjaya dijana menggunakan: ${modelName}`);
+          break; // Jika berjaya, berhenti mencuba
+        }
+      } catch (err: any) {
+        lastError = err.message || JSON.stringify(err);
+        console.warn(`[Gagal ${modelName}]: ${lastError}`);
+      }
+    }
+
+    if (!response || !response.text) {
+      throw new Error(`Google AI API Error: ${lastError}`);
+    }
 
     const generatedText = response.text || '';
 
