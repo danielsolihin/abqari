@@ -124,7 +124,7 @@ export default function DashboardUtama() {
         setStats({
           subjects: subJson.success ? subJson.data.length : 0,
           docs: docJson.success ? docJson.data.length : 0,
-          archives: 0, // Arkib dikekalkan 0 sementara menunggu modul arkib siap
+          archives: 0, 
         });
       } catch (err) {
         console.error(err);
@@ -263,7 +263,7 @@ export default function DashboardUtama() {
     },
     container: { maxWidth: '1200px', margin: '0 auto', padding: '35px 20px', position: 'relative' as 'relative', zIndex: 1 },
     headerBox: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px', paddingTop: '5px' },
-    card: { height: '100%', backgroundColor: 'white', borderRadius: '14px', padding: '22px', border: '1px solid #e2e8f0', cursor: 'pointer', display: 'flex', flexDirection: 'column' as 'column', gap: '12px', transition: 'all 0.3s ease' },
+    card: { height: '100%', backgroundColor: 'white', borderRadius: '14px', padding: '25px', border: '1px solid #e2e8f0', cursor: 'pointer', display: 'flex', flexDirection: 'column' as 'column', gap: '15px', transition: 'all 0.3s ease' },
     input: { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', boxSizing: 'border-box' as 'border-box' }
   };
 
@@ -273,7 +273,7 @@ export default function DashboardUtama() {
     { id: 'penjana', title: 'Penjana Soalan & JSU', desc: 'Jana kertas soalan dan skema jawapan secara automatik.', icon: '⚡', link: '/penjana', bgColor: '#fffbeb' },
     { id: 'chat', title: 'Pembantu AI (RAG)', desc: 'Bersoal jawab dengan nota anda secara langsung.', icon: '💬', link: '/chat', bgColor: '#fdf2f8' },
     { id: 'arkib', title: 'Arkib & Laporan', desc: 'Semak sejarah soalan dan muat turun dokumen.', icon: '🗄️', link: '/arkib', bgColor: '#f5f3ff' },
-    { id: 'tetapan', title: 'Tetapan Pentadbir', desc: 'Urus pendaftaran pensyarah & templat rasmi fakulti.', icon: '⚙️', link: '/admin', bgColor: '#fef2f2' }
+    { id: 'tetapan', title: 'Tetapan Pentadbir', desc: 'Urus pendaftaran pensyarah & templat rasmi.', icon: '⚙️', link: '/admin', bgColor: '#fef2f2' }
   ];
 
   const allowedMenuItems = allMenuItems.filter(item => {
@@ -282,6 +282,12 @@ export default function DashboardUtama() {
     }
     return true; 
   });
+
+  // Trik CSS Pintar: Jika ada 4 modul, kita paksa ia jadi saiz lebih besar (2x2 grid). 
+  // Jika 6 modul, ia akan muat jadi 3x2 grid.
+  const dynamicGridColumns = allowedMenuItems.length === 4 
+    ? 'repeat(auto-fit, minmax(400px, 1fr))' 
+    : 'repeat(auto-fit, minmax(280px, 1fr))';
 
   return (
     <div style={styles.page}>
@@ -374,7 +380,9 @@ export default function DashboardUtama() {
 
         <div style={{ marginTop: '40px' }}>
           <h2 style={{ color: '#0f172a', marginBottom: '20px', fontSize: '1.3rem', fontWeight: 'bold' }}>Modul Tersedia</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '22px', alignItems: 'stretch' }}>
+          
+          {/* DIKEMAS KINI: Memanggil gridColumns yang dinamik */}
+          <div style={{ display: 'grid', gridTemplateColumns: dynamicGridColumns, gap: '22px', alignItems: 'stretch' }}>
             {allowedMenuItems.map((item) => (
               <Link key={item.id} href={item.link} style={{ textDecoration: 'none', color: 'inherit', display: 'block', height: '100%' }}>
                 <div onMouseEnter={() => setHoveredCard(item.id)} onMouseLeave={() => setHoveredCard(null)} style={{ ...styles.card, transform: hoveredCard === item.id ? 'translateY(-4px)' : 'translateY(0)', boxShadow: hoveredCard === item.id ? '0 12px 25px -5px rgba(0,0,0,0.08)' : '0 2px 4px rgba(0,0,0,0.03)' }}>
@@ -382,8 +390,8 @@ export default function DashboardUtama() {
                     {item.icon}
                   </div>
                   <div>
-                    <h3 style={{ margin: '0 0 6px 0', color: '#0f172a', fontSize: '1.1rem', fontWeight: '700' }}>{item.title}</h3>
-                    <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem', lineHeight: '1.5' }}>{item.desc}</p>
+                    <h3 style={{ margin: '0 0 6px 0', color: '#0f172a', fontSize: '1.15rem', fontWeight: '700' }}>{item.title}</h3>
+                    <p style={{ margin: 0, color: '#64748b', fontSize: '0.9rem', lineHeight: '1.5' }}>{item.desc}</p>
                   </div>
                   <div style={{ marginTop: 'auto', paddingTop: '12px', display: 'flex', alignItems: 'center', color: hoveredCard === item.id ? '#3b0764' : '#94a3b8', fontWeight: 'bold', fontSize: '0.85rem' }}>
                     Akses Modul →
