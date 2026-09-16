@@ -16,6 +16,10 @@ export default function ArkibPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedArchive, setSelectedArchive] = useState<any | null>(null);
 
+  // STATE BAHARU: Penapis Subjek & Pilihan Padam Pukal
+  const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('');
+  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
+
   // State Profil Pengguna Dinamik Supabase
   const [userProfile, setUserProfile] = useState<{
     name: string;
@@ -83,12 +87,38 @@ export default function ArkibPage() {
       const json = await res.json();
       if (res.ok && json.success) {
         setArchives(archives.filter(a => a.id !== id));
+        setSelectedDocIds(prev => prev.filter(docId => docId !== id));
         alert('Set soalan berjaya dipadamkan dari Arkib.');
         if (selectedArchive?.id === id) setSelectedArchive(null);
       }
     } catch (error) {
       alert('Berlaku ralat pelayan semasa memadam arkib.');
     }
+  };
+
+  // FUNGSI BAHARU: Padam Serentak (Bulk Delete)
+  const handleBulkDelete = async () => {
+    if (selectedDocIds.length === 0) return;
+    if (!confirm(`AMARAN: Anda pasti mahu memadam ${selectedDocIds.length} rekod arkib ini secara serentak?`)) return;
+
+    let successCount = 0;
+    for (const id of selectedDocIds) {
+      try {
+        const res = await fetch('/api/archives', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        });
+        const json = await res.json();
+        if (res.ok && json.success) successCount++;
+      } catch (error) {
+        console.error(`Gagal memadam arkib ID ${id}`);
+      }
+    }
+
+    alert(`${successCount} rekod arkib berjaya dipadamkan.`);
+    setSelectedDocIds([]);
+    fetchArchives();
   };
 
   // FUNGSI EKSPORT PROGRAMATIK KE MS WORD (.DOCX)
@@ -113,6 +143,7 @@ export default function ArkibPage() {
           new Paragraph({ children: [new TextRun({ text: `KOD KURSUS\t: ${arkib.course_code !== 'TIADA' ? arkib.course_code : ''}`, bold: true })] }),
           new Paragraph({ children: [new TextRun({ text: `SESI\t\t\t: ${arkib.exam_period}`, bold: true })] }),
           new Paragraph({ children: [new TextRun({ text: `TEMA/SET\t\t: ${arkib.type}`, bold: true })] }),
+          new Paragraph({ children: [new TextRun({ text: `PENJANA\t\t: ${arkib.created_by_name || arkib.user_name || arkib.lecturer_name || arkib.author || userProfile.name}`, bold: true })] }),
           new Paragraph({ text: "" }),
           
           // ARAHAN CALON
@@ -178,6 +209,30 @@ export default function ArkibPage() {
     });
   };
 
+  // LOGIK TAPISAN & PILIHAN PUKAL
+  const uniqueSubjects = Array.from(new Set(archives.map(a => a.subject_name).filter(Boolean)));
+
+  const filteredArchives = archives.filter(a => {
+    if (!selectedSubjectFilter) return true;
+    return a.subject_name === selectedSubjectFilter;
+  });
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedDocIds(filteredArchives.map(a => a.id));
+    } else {
+      setSelectedDocIds([]);
+    }
+  };
+
+  const handleSelectRow = (id: string) => {
+    if (selectedDocIds.includes(id)) {
+      setSelectedDocIds(selectedDocIds.filter(docId => docId !== id));
+    } else {
+      setSelectedDocIds([...selectedDocIds, id]);
+    }
+  };
+
   const styles = {
     page: { backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '"Inter", "Segoe UI", sans-serif', position: 'relative' as 'relative' },
     banner: {
@@ -195,6 +250,8 @@ export default function ArkibPage() {
     btnView: { backgroundColor: '#eff6ff', color: '#2563eb', padding: '6px 12px', borderRadius: '6px', border: '1px solid #bfdbfe', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer', marginRight: '8px' },
     btnDownload: { backgroundColor: '#f0fdf4', color: '#166534', padding: '6px 12px', borderRadius: '6px', border: '1px solid #bbf7d0', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer', marginRight: '8px' },
     btnDelete: { backgroundColor: '#fef2f2', color: '#ef4444', padding: '6px 12px', borderRadius: '6px', border: '1px solid #fecaca', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer' },
+    btnDanger: { backgroundColor: '#ef4444', color: 'white', padding: '8px 16px', borderRadius: '8px', fontWeight: '700', border: 'none', cursor: 'pointer', fontSize: '0.85rem' },
+    selectInput: { padding: '10px 15px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outlineColor: '#3b0764', backgroundColor: '#f8fafc', fontWeight: '600' }
   };
 
   return (
@@ -217,9 +274,35 @@ export default function ArkibPage() {
         </div>
 
         <div style={styles.card}>
+          {/* BAR KAWALAN: TAPISAN SUBJEK & PADAM PUKAL */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', marginBottom: '20px', borderBottom: '2px solid #f1f5f9', paddingBottom: '15px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, maxWidth: '400px' }}>
+              <select 
+                value={selectedSubjectFilter} 
+                onChange={(e) => setSelectedSubjectFilter(e.target.value)}
+                style={{ ...styles.selectInput, width: '100%' }}
+              >
+                <option value="">📋 Semua Subjek ({archives.length})</option>
+                {uniqueSubjects.map((subName) => (
+                  <option key={subName} value={subName}>
+                    {subName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              {selectedDocIds.length > 0 && (
+                <button style={styles.btnDanger} onClick={handleBulkDelete}>
+                  🗑️ Padam Terpilih ({selectedDocIds.length})
+                </button>
+              )}
+            </div>
+          </div>
+
           {isLoading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>⏳ Sedang memuatkan senarai arkib...</div>
-          ) : archives.length === 0 ? (
+          ) : filteredArchives.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px', color: '#64748b' }}>
               <div style={{ fontSize: '3rem', marginBottom: '10px' }}>🗄️</div>
               <p style={{ fontSize: '1.1rem', fontWeight: '600', color: '#0f172a' }}>Tiada rekod dijumpai.</p>
@@ -230,26 +313,58 @@ export default function ArkibPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={styles.th}>Tarikh Jana</th>
+                    <th style={{ ...styles.th, width: '40px', textAlign: 'center' }}>
+                      <input 
+                        type="checkbox" 
+                        onChange={handleSelectAll} 
+                        checked={filteredArchives.length > 0 && selectedDocIds.length === filteredArchives.length} 
+                      />
+                    </th>
+                    <th style={{ ...styles.th, width: '50px', textAlign: 'center' }}>NO.</th>
+                    <th style={styles.th}>Tarikh & Masa</th>
                     <th style={styles.th}>Maklumat Subjek</th>
+                    <th style={styles.th}>Nama Penjana</th>
                     <th style={styles.th}>Sesi & Tetapan</th>
-                    <th style={styles.th}>Tindakan</th>
+                    <th style={{ ...styles.th, textAlign: 'center' }}>Tindakan</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {archives.map((arkib) => (
-                    <tr key={arkib.id}>
+                  {filteredArchives.map((arkib, index) => (
+                    <tr 
+                      key={arkib.id} 
+                      style={{ backgroundColor: selectedDocIds.includes(arkib.id) ? '#f1f5f9' : 'transparent' }}
+                    >
+                      <td style={{ ...styles.td, textAlign: 'center' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedDocIds.includes(arkib.id)} 
+                          onChange={() => handleSelectRow(arkib.id)} 
+                        />
+                      </td>
+                      <td style={{ ...styles.td, textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>
+                        {index + 1}
+                      </td>
                       <td style={styles.td}>
-                        <strong>{new Date(arkib.created_at).toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</strong>
+                        <div style={{ fontWeight: 'bold', color: '#0f172a' }}>
+                          {new Date(arkib.created_at).toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
+                          🕒 {new Date(arkib.created_at).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase()}
+                        </div>
                       </td>
                       <td style={styles.td}>
                         <div style={{ color: '#0f172a', fontWeight: 'bold' }}>{arkib.course_code !== 'TIADA' ? `${arkib.course_code} - ` : ''}{arkib.subject_name}</div>
                       </td>
                       <td style={styles.td}>
+                        <div style={{ fontWeight: '600', color: '#334155' }}>
+                          👤 {arkib.created_by_name || arkib.user_name || arkib.lecturer_name || arkib.author || userProfile.name}
+                        </div>
+                      </td>
+                      <td style={styles.td}>
                         <span style={{ backgroundColor: '#f1f5f9', padding: '3px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', color: '#475569' }}>{arkib.exam_period}</span>
                         <br/><span style={{ fontSize: '0.8rem', color: '#3b82f6', fontWeight: '600' }}>{arkib.type}</span>
                       </td>
-                      <td style={styles.td}>
+                      <td style={{ ...styles.td, textAlign: 'center' }}>
                         <button onClick={() => setSelectedArchive(arkib)} style={styles.btnView}>👁️ Lihat</button>
                         <button onClick={() => handleExportWord(arkib)} style={styles.btnDownload}>⬇️ Word</button>
                         <button onClick={() => handleDelete(arkib.id)} style={styles.btnDelete}>🗑️</button>
@@ -270,6 +385,10 @@ export default function ArkibPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #f1f5f9', padding: '20px 30px', backgroundColor: '#f8fafc', borderRadius: '16px 16px 0 0' }}>
               <div>
                 <h2 style={{ margin: 0, color: '#0f172a', fontSize: '1.4rem' }}>{selectedArchive.course_code !== 'TIADA' ? `${selectedArchive.course_code} - ` : ''}{selectedArchive.subject_name}</h2>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+                  Penjana: <strong>{selectedArchive.created_by_name || selectedArchive.user_name || selectedArchive.lecturer_name || selectedArchive.author || userProfile.name}</strong> 
+                  <span style={{ marginLeft: '10px' }}>🕒 {new Date(selectedArchive.created_at).toLocaleDateString('ms-MY')} | {new Date(selectedArchive.created_at).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase()}</span>
+                </p>
               </div>
               <button onClick={() => setSelectedArchive(null)} style={{ background: '#e2e8f0', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', color: '#475569', fontWeight: 'bold' }}>✕</button>
             </div>
