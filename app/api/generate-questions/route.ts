@@ -202,10 +202,29 @@ ${skemaPrompt}
 SKEMA JAWAPAN TAMAT
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
-      contents: prompt,
-    });
+    let response;
+    
+    // SISTEM FALLBACK 2 PERINGKAT (Menangani Isu High Demand / 503)
+    try {
+      // Pelan A: Guna model paling pintar (gemini-1.5-pro)
+      response = await ai.models.generateContent({
+        model: 'gemini-1.5-pro',
+        contents: prompt,
+      });
+    } catch (primaryError: any) {
+      console.warn(`[Pelan A Gagal] Pelayan Gemini Pro sibuk (${primaryError.message}). Beralih ke Pelan B (Gemini Flash)...`);
+      
+      try {
+        // Pelan B: Jika Pelan A gagal/sibuk, tukar gear guna model ringan & pantas (gemini-1.5-flash)
+        response = await ai.models.generateContent({
+          model: 'gemini-1.5-flash',
+          contents: prompt,
+        });
+      } catch (fallbackError: any) {
+        console.error('[Pelan B Gagal] Kedua-dua model AI sedang sesak:', fallbackError);
+        throw new Error('Sistem AI Google sedang mengalami kesesakan kritikal pada waktu ini. Sila cuba lagi selepas beberapa minit.');
+      }
+    }
 
     const generatedText = response.text || '';
 
@@ -223,7 +242,7 @@ SKEMA JAWAPAN TAMAT
         subject_name: courseName || 'Subjek Tanpa Nama',
         exam_period: examPeriod || 'JULAI 2026',
         type: `Set ${setSoalan} (${theme})`,
-        generator_name: 'Prof. Dr. Ahmad Fakhruddin',
+        generator_name: 'Prof. Dr. Ahmad Fakhruddin', // Sila pastikan nama ini dinamik jika perlu pada masa akan datang
         status: 'Selesai',
         questions_text: qText,
         scheme_text: sText
