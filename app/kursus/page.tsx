@@ -339,8 +339,9 @@ export default function PengurusanKursusPage() {
                   onChange={(e) => handleSelectSubjectChange(e.target.value)}
                 >
                   <option value="">-- + Tambah Subjek Baharu --</option>
-                  {subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
+                  {/* DIKEMAS KINI: Menambah index bagi key prop fallback */}
+                  {subjects.map((s, index) => (
+                    <option key={s.id ? s.id : `subjek-${index}`} value={s.id || ''}>
                       {formatSubjectDisplay(s.course_code, s.name)}
                     </option>
                   ))}
@@ -390,11 +391,12 @@ export default function PengurusanKursusPage() {
                     Tiada subjek berdaftar lagi.
                   </p>
                 ) : (
-                  subjects.map((sub) => {
+                  subjects.map((sub, index) => {
                     const isSelected = selectedSubjectId === sub.id;
                     return (
                       <div 
-                        key={sub.id} 
+                        // DIKEMAS KINI: Menambah index bagi key prop fallback
+                        key={sub.id ? sub.id : `subjek-card-${index}`} 
                         onClick={() => handleSelectSubjectChange(sub.id)}
                         style={styles.subjectCardItem(isSelected)}
                       >

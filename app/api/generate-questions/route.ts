@@ -1,272 +1,196 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { GoogleGenAI } from '@google/genai';
+import { NextResponse } from "next/server";
 
-export const runtime = 'nodejs';
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; 
 
-const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY });
-
-const THEME_KEYWORDS: Record<string, string> = {
-  "Agama": "Al-Quran, Hadis, Aqidah, Ibadah, Akhlak, Fiqh, Usul Fiqh, Tafsir, Ulum al-Quran, Ulum al-Hadis, Sirah Nabi, Sejarah Islam, Syariah, Muamalat, Munakahat, Jinayat, Maqasid al-Syariah, Dakwah, Tasawuf, Pemikiran Islam, Perbandingan Agama, Etika Islam, Halal dan Haram, Zakat, Wakaf, Ekonomi Islam, Kewangan Islam.",
-  "Falsafah": "Falsafah, Epistemologi, Ontologi, Metafizik, Aksiologi, Logik, Etika, Estetika, Falsafah Sains, Falsafah Pendidikan, Falsafah Bahasa, Falsafah Politik, Falsafah Ekonomi, Falsafah Undang-undang, Falsafah Islam, Falsafah Barat, Falsafah Timur, Pemikiran Kritis, Pemikiran Analitis, Teori Pengetahuan, Falsafah Insan, Falsafah Alam, Falsafah Teknologi.",
-  "Saintifik": "Biologi, Kimia, Fizik, Matematik, Astronomi, Geologi, Geografi, Perubatan, Farmasi, Sains Kesihatan, Sains Alam Sekitar, Sains Makanan, Sains Komputer, Teknologi Maklumat, Kejuruteraan, Bioteknologi, Nanoteknologi, Sains Data, Kecerdasan Buatan (AI), Robotik, Neurosains, Genetik, Mikrobiologi, Sains Bahan, Sains Sosial, Psikologi, Sosiologi, Ekonomi, Antropologi, Kaedah Penyelidikan Saintifik.",
-  "Semua Tema": "Integrasi dan gabungan menyeluruh merangkumi Agama, Falsafah, dan Saintifik."
-};
-
-function calculateCosineSimilarity(vecA: number[], vecB: number[]): number {
-  if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-    normA += vecA[i] * vecA[i];
-    normB += vecB[i] * vecB[i];
-  }
-  if (normA === 0 || normB === 0) return 0;
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
+    const apiKey = process.env.OPENAI_API_KEY;
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "Kunci API OpenAI tidak ditemui dalam .env.local." },
+        { status: 500 }
+      );
+    }
+
     const body = await req.json();
-    const { 
-      subjectId, courseName, courseCode, examPeriod, duration, theme, sections, bloomCounts, setSoalan, co, lo, topicDistribution, subQuestions 
+    const {
+      courseName,
+      courseCode,
+      theme,
+      sections,
+      topicDistribution,
+      aiModel,
+      context,
+      co,
+      lo,
+      setSoalan
     } = body;
 
-    if (!subjectId) return NextResponse.json({ error: 'ID Subjek diperlukan.' }, { status: 400 });
-
-    const { data: chunks, error: chunksError } = await supabase
-      .from('document_chunks')
-      .select(`id, content, embedding, documents!inner(subject_id)`)
-      .eq('documents.subject_id', subjectId);
-
-    if (chunksError || !chunks || chunks.length === 0) {
-      return NextResponse.json({ error: 'Tiada dokumen PDF dijumpai untuk subjek ini.' }, { status: 404 });
+    let topicsText = "Silibus standard peringkat universiti.";
+    if (topicDistribution && topicDistribution.length > 0) {
+      topicsText = topicDistribution
+        .filter((t: any) => t.name.trim() !== '')
+        .map((t: any) => `- ${t.name} (Wajaran: ${t.percentage}%)`)
+        .join('\n');
     }
 
-    const activeTopics = topicDistribution?.filter((t: any) => t.name.trim() !== '') || [];
-    const queryTopicText = activeTopics.map((t: any) => t.name).join(' ') || theme;
-    
-    let relevantChunks = chunks;
-
-    try {
-      const queryEmbedResponse = await ai.models.embedContent({
-        model: 'gemini-embedding-001',
-        contents: `${queryTopicText} ${THEME_KEYWORDS[theme] || ''}`,
-        config: {
-          outputDimensionality: 768,
-        },
-      });
-
-      const queryVector =
-        queryEmbedResponse.embeddings?.[0]?.values ||
-        (queryEmbedResponse as any)?.embedding?.values ||
-        (queryEmbedResponse as any)?.values;
-
-      if (queryVector) {
-        const scoredChunks = chunks.map((c: any) => {
-          let score = 0;
-          if (Array.isArray(c.embedding)) {
-            score = calculateCosineSimilarity(queryVector, c.embedding);
-          }
-          return { ...c, score };
-        });
-
-        scoredChunks.sort((a, b) => b.score - a.score);
-        relevantChunks = scoredChunks.slice(0, 15);
-      }
-    } catch (embedError) {
-      console.warn('Amaran: Gagal melaksanakan carian vektor, menggunakan mod fail-safe:', embedError);
-    }
-
-    const contextText = relevantChunks.map(c => c.content).join('\n\n');
-    const currentThemeKeywords = THEME_KEYWORDS[theme] || THEME_KEYWORDS["Semua Tema"];
-
-    const themeWarning = theme === 'Semua Tema'
-      ? `AMARAN: Anda dibenarkan menggabungkan konteks secara bebas dan bersepadu.`
-      : `AMARAN MUTLAK: DILARANG menjana soalan yang tersasar daripada tema ${theme.toUpperCase()}.`;
-
-    const coListString = Array.isArray(co) && co.length > 0 ? co.join(', ') : 'Tiada';
-    const loListString = Array.isArray(lo) && lo.length > 0 ? lo.join(', ') : 'Tiada';
-
-    let topicPrompt = '';
-    if (activeTopics.length > 0) {
-      const topicList = activeTopics.map((t: any) => `- ${t.name} (${t.percentage}%)`).join('\n');
-      topicPrompt = `
-TABURAN TOPIK KURSUS:
-Anda mesti mengagihkan penghasilan soalan berpandukan peratusan topik di bawah:
-${topicList}
-`;
-    }
-
-    let formatPrompt = "";
-    let skemaPrompt = "";
-
-    const generateSectionPrompt = (sectionName: string, sectionData: any) => {
-      if (!sectionData || !sectionData.enabled || sectionData.count <= 0) return;
-
-      formatPrompt += `\nBAHAGIAN ${sectionName} (${sectionData.marks} MARKAH)\n`;
-      skemaPrompt += `\nBAHAGIAN ${sectionName}\n`;
-
-      if (sectionData.type === 'objektif') {
-        formatPrompt += `WAJIB hasilkan TEPAT ${sectionData.count} soalan berformat Objektif (A, B, C, D).\n`;
-        formatPrompt += `1. [Soalan] [C: ..] [LO: ..] [Aras: CX]\n   A. [Pilihan 1]\n   B. [Pilihan 2]\n   C. [Pilihan 3]\n   D. [Pilihan 4]\n`;
-        skemaPrompt += `1. [Jawapan A/B/C/D]\n...(Teruskan sehingga soalan ke-${sectionData.count})\n`;
-      } 
-      else if (sectionData.type === 'true_false') {
-        formatPrompt += `WAJIB hasilkan TEPAT ${sectionData.count} soalan berformat Benar/Salah.\n`;
-        formatPrompt += `1. [Soalan] [C: ..] [LO: ..] [Aras: CX]\n   A. BENAR\n   B. SALAH\n`;
-        skemaPrompt += `1. [Jawapan BENAR/SALAH]\n...(Teruskan sehingga soalan ke-${sectionData.count})\n`;
-      } 
-      else if (sectionData.type === 'essay') {
-        let subQFormat = `SOALAN 1\na) [Soalan] [C: ..] [LO: ..] [Aras: CX] (X Markah)\n`;
-        let subQSkema = `SOALAN 1\na) Fakta (1m) + Huraian ringkas (1m) -> Jumlah Markah\n`;
-        
-        if (subQuestions && subQuestions.enabled && subQuestions.count > 0) {
-          subQFormat = `SOALAN 1\n`;
-          subQSkema = `SOALAN 1\n`;
-          const alphabets = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
-          const actualCount = Math.min(subQuestions.count, 10);
-          for (let i = 0; i < actualCount; i++) {
-            subQFormat += `   ${alphabets[i]}) [Sub-soalan ${alphabets[i]}] [C: ..] [LO: ..] [Aras: CX] (X Markah)\n`;
-            subQSkema += `   ${alphabets[i]}) Fakta (1m) + Huraian ringkas (1m) -> Jumlah Markah\n`;
-          }
-        }
-        
-        formatPrompt += `WAJIB hasilkan TEPAT ${sectionData.count} soalan utama berformat Esei/Subjektif.\n${subQFormat}...(Teruskan sehingga Soalan ${sectionData.count})\n`;
-        skemaPrompt += `${subQSkema}...(Teruskan skema ini sehingga Soalan ${sectionData.count})\n`;
-      }
+    // Fungsi pintar mengira markah seragam (termasuk titik perpuluhan jika ada)
+    const getMarksPerQ = (marks: any, count: any) => {
+       const m = Number(marks) || 0;
+       const c = Number(count) || 1;
+       const val = m / c;
+       return Number.isInteger(val) ? val.toString() : val.toFixed(1);
     };
 
-    generateSectionPrompt('A', sections.A);
-    generateSectionPrompt('B', sections.B);
-    generateSectionPrompt('C', sections.C);
+    const formatType = (type: string, marksPerQ: string) => {
+        if (type === 'true_false') return `BENAR ATAU SALAH (Sediakan penyataan fakta. WAJIB letak (${marksPerQ} Markah) di hujung soalan)`;
+        if (type === 'essay') return `ESSEI / SUBJEKTIF (Mesti bermula dengan ayat penyata/konteks. WAJIB letak nilai markah seragam iaitu (${marksPerQ} Markah) pada BARIS BAHARU di bawah setiap soalan)`;
+        return `OBJEKTIF ANEKA PILIHAN (Sediakan pilihan jawapan A, B, C, D. Setiap soalan bernilai ${marksPerQ} Markah)`;
+    };
 
-    const prompt = `Anda adalah Penggubal Soalan Peperiksaan Akademik Rasmi UiTM bertaraf Profesor.
-Tugas anda adalah menjana ISI KANDUNGAN SOALAN untuk SET SOALAN ${setSoalan} dan SKEMA JAWAPAN sahaja. JANGAN jana maklumat "Header".
+    const formatBloom = (bloomObj: any) => {
+        if (!bloomObj) return "Secara seimbang.";
+        const parts = [];
+        if (bloomObj.C1 > 0) parts.push(`${bloomObj.C1} soalan C1`);
+        if (bloomObj.C2 > 0) parts.push(`${bloomObj.C2} soalan C2`);
+        if (bloomObj.C3 > 0) parts.push(`${bloomObj.C3} soalan C3`);
+        if (bloomObj.C4 > 0) parts.push(`${bloomObj.C4} soalan C4`);
+        if (bloomObj.C5 > 0) parts.push(`${bloomObj.C5} soalan C5`);
+        if (bloomObj.C6 > 0) parts.push(`${bloomObj.C6} soalan C6`);
+        return parts.length > 0 ? parts.join(", ") : "Campuran rawak.";
+    };
 
-==================================================
-HIRARKI KEUTAMAAN MUTLAK & RESHUFFLE ARAS BLOOM:
-==================================================
+    const sectionA = sections?.A?.enabled && sections.A.count > 0 ? `1. BAHAGIAN A:
+   - Jumlah: TEPAT ${sections.A.count} soalan.
+   - Format: ${formatType(sections.A.type, getMarksPerQ(sections.A.marks, sections.A.count))}.
+   - PECAHAN ARAS BLOOM: ${formatBloom(sections.A.bloom)}.` : "";
 
-KEUTAMAAN #1 (KUOTA ARAS BLOOM & SUSUNAN RAWAK / RESHUFFLE):
-1. KUOTA TEPAT 100%: Anda WAJIB memastikan JUMLAH KESELURUHAN TAG [Aras: CX] TEPAT KETAT sepadan dengan sasaran nombor di bawah:
-   - Aras [Aras: C1] (Pengetahuan) : WAJIB TEPAT ${bloomCounts.C1} soalan
-   - Aras [Aras: C2] (Pemahaman)   : WAJIB TEPAT ${bloomCounts.C2} soalan
-   - Aras [Aras: C3] (Aplikasi)    : WAJIB TEPAT ${bloomCounts.C3} soalan
-   - Aras [Aras: C4] (Analisis)    : WAJIB TEPAT ${bloomCounts.C4} soalan
-   - Aras [Aras: C5] (Sintesis)    : WAJIB TEPAT ${bloomCounts.C5} soalan
-   - Aras [Aras: C6] (Penilaian)   : WAJIB TEPAT ${bloomCounts.C6} soalan
+    const sectionB = sections?.B?.enabled && sections.B.count > 0 ? `2. BAHAGIAN B:
+   - Jumlah: TEPAT ${sections.B.count} soalan.
+   - Format: ${formatType(sections.B.type, getMarksPerQ(sections.B.marks, sections.B.count))}.
+   - PECAHAN ARAS BLOOM: ${formatBloom(sections.B.bloom)}.` : "";
 
-2. ARAHAN RESHUFFLE (SUSUNAN RAWAK & BERSERTAAN):
-   - DILARANG SAMA SEKALI menyusun aras soalan secara berkelompok berturutan.
-   - Anda WAJIB MENGACAK / MERAWAKKAN (RESHUFFLE) taburan aras Bloom secara dinamik sepanjang kertas soalan.
+    const sectionC = sections?.C?.enabled && sections.C.count > 0 ? `3. BAHAGIAN C:
+   - Jumlah: TEPAT ${sections.C.count} soalan.
+   - Format: ${formatType(sections.C.type, getMarksPerQ(sections.C.marks, sections.C.count))}.
+   - PECAHAN ARAS BLOOM: ${formatBloom(sections.C.bloom)}.` : "";
 
-KEUTAMAAN #2 (JUMLAH & STRUKTUR BAHAGIAN SOALAN):
-1. ANDA WAJIB menghasilkan JUMLAH SOALAN YANG TEPAT seperti yang dinyatakan dalam setiap bahagian.
+    const activeParts = [];
+    if (sectionA) activeParts.push("Bahagian A");
+    if (sectionB) activeParts.push("Bahagian B");
+    if (sectionC) activeParts.push("Bahagian C");
+    const activeSectionsStr = activeParts.length > 0 ? activeParts.join(", ") : "Bahagian yang ditetapkan";
 
-KEUTAMAAN #3 (TEMA, TOPIK, DOMAIN CO & LO):
-- Tema Pilihan: **${theme.toUpperCase()}**
-- Fokus Konsep: ${currentThemeKeywords}
-${themeWarning}
-${topicPrompt}
-- Pilihan Domain: ${coListString}
-- Pilihan LO: ${loListString}
+    const domainMapping = co && co.length > 0 ? co.join(', ') : 'C1, C2, C3, A3, A5';
+    const coMapping = co && co.length > 0 ? co.join(', ') : 'CO1';
+    const loMapping = lo && lo.length > 0 ? lo.join(', ') : 'LO1';
 
-KEUTAMAAN #4 (KAWALAN SUMBER & KREATIVITI OLAHAN):
-1. Fakta asas dan jawapan tetap berasal dari "TEKS SUMBER KURSUS".
+    const systemInstruction = `Anda adalah Profesor dan Penggubal Soalan Peperiksaan Rasmi (ABQARI - UiTM).
+Subjek: ${courseCode || ""} ${courseName || "Umum"}
+Set Soalan: SET ${setSoalan || "1"}
 
-KETEPATAN ISTILAH & LARAS BAHASA AGAMA (KONTEKS MALAYSIA):
-1. Peperiksaan rasmi di Malaysia.
-2. Gunakan "Al-Quran" apabila merujuk kitab suci secara khusus.
+KANDUNGAN NOTA / DOKUMEN RUJUKAN:
+${context ? context : "Tiada nota. GUNA PANGKALAN PENGETAHUAN AKADEMIK ANDA SECARA TEPAT."}
 
-FORMAT SOALAN YANG DIKEHENDAKI:
-${formatPrompt}
+ARAHAN WAJIB STRUKTUR SOALAN ESEI / SUBJEKTIF:
+- SETIAP SOALAN ESEI WAJIB DIMULAKAN DENGAN SATU ATAU DUA AYAT PENYATA / PEMBUKA SITUASI TERLEBIH DAHULU SEBELUM SOALAN UTAMA DIAJUKAN.
+- WAJIB letakkan nilai markah pada BARIS BAHARU di bawah setiap soalan esei.
+- AMARAN MARKAH: JANGAN KIRA SENDIRI! Semua soalan dalam bahagian yang sama mesti mempunyai jumlah markah yang SAMA RATA TEPAT seperti yang diisytiharkan dalam format.
 
-TEKS SUMBER KURSUS:
-"""
-${contextText}
-"""
+ARAHAN KETAT TEMA & SET:
+- TEMA PILIHAN: "${theme || "Semua Tema"}"
+- SET SOALAN: SET ${setSoalan || "1"}
+
+=========================================================
+!!! AMARAN KERAS: ARAHAN TAG SOALAN (WAJIB DIPATUHI) !!!
+=========================================================
+ANDA WAJIB MELETAKKAN KESEMUA EMPAT (4) TAG LENGKAP DI HUJUNG SETIAP SOALAN (ATAU SELEPAS PILIHAN JAWAPAN BAGI OBJEKTIF). 
+JANGAN TINGGAL WALAU SATU TAG PUN! JANGAN LETAK TAG DI BARIS MARKAH!
+
+Format Wajib (4 Kurungan): [Aras: CX] [COx] [LOx] [Kod Domain]
+*Untuk tag Domain, tulis KOD SAHAJA. Contoh: [C1] atau [A3]. JANGAN guna perkataan "Domain:".
+
+CONTOH SOALAN OBJEKTIF YANG BETUL (WAJIB ADA 4 TAG!):
+1. Manakah antara berikut merupakan rukun iman yang pertama?
+   A. Percaya kepada Rasul
+   B. Percaya kepada Allah
+   C. Percaya kepada Kitab
+   D. Percaya kepada Qada dan Qadar
+   [Aras: C1] [CO1] [LO1] [C1]
+
+CONTOH SOALAN ESEI YANG BETUL (WAJIB ADA 4 TAG!):
+1. Perpaduan nasional merupakan teras utama dalam mengekalkan keharmonian masyarakat majmuk. Bincangkan sejauh mana prinsip Rukun Negara memupuk semangat ini. [Aras: C4] [CO2] [LO3] [C3]
+(20 Markah)
+=========================================================
+
+PERATURAN SOALAN OBJEKTIF & SKEMA:
+1. SOALAN OBJEKTIF: DILARANG guna kata kerja esei (Jelaskan, Senaraikan).
+2. SKEMA OBJEKTIF: Hanya tulis nombor dan huruf jawapan sahaja (cth: 1. A, 2. B).
+
+BLUEPRINT SOALAN (HANYA JANA BAHAGIAN YANG DINYATAKAN DI BAWAH SAHAJA. JANGAN JANA BAHAGIAN LAIN!):
+${sectionA}
+${sectionB}
+${sectionC}
+
+CAKUPAN TOPIK:
+${topicsText}
+
+FORMAT OUTPUT MANDATORI:
+Keluarkan hasil dalam DUA bahagian yang dipisahkan secara TEPAT oleh tag [PENJANAAN SKEMA JAWAPAN]:
+
+# BAHAGIAN 1: KERTAS SOALAN PEPERIKSAAN
+(Tulis HANYA soalan untuk ${activeSectionsStr} di sini. TIADA JAWAPAN DI SINI)
 
 [PENJANAAN SKEMA JAWAPAN]
-${skemaPrompt}
-SKEMA JAWAPAN TAMAT
-`;
 
-    // PENAMBAHAN MODEL FLASH UNTUK AKAUN PERCUMA: 
-    // AI akan cuba Pro dahulu, jika akaun percuma menolak, ia akan terus beralih ke Flash secara automatik.
-    const candidateModels = [
-      'gemini-1.5-pro-latest',
-      'gemini-1.5-pro-002',
-      'gemini-1.5-pro-001',
-      'gemini-1.5-pro',
-      'gemini-1.5-flash'
-    ];
+# BAHAGIAN 2: SKEMA JAWAPAN DAN AGIHAN MARKAH
+(Tulis skema jawapan rasmi mengikut format ketat di sini)`;
 
-    let response;
-    let lastError = '';
+    console.log(`[OpenAI API] Menjana soalan (SET ${setSoalan})...`);
 
-    for (const modelName of candidateModels) {
-      try {
-        console.log(`Mencuba menjana soalan dengan model: ${modelName}...`);
-        response = await ai.models.generateContent({
-          model: modelName,
-          contents: prompt,
-        });
-        if (response && response.text) {
-          console.log(`[BERJAYA] Dijana menggunakan: ${modelName}`);
-          break;
-        }
-      } catch (err: any) {
-        lastError = err.message || JSON.stringify(err);
-        console.warn(`[Gagal ${modelName}]: ${lastError}`);
-      }
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: aiModel === 'gpt-4o-mini' ? 'gpt-4o-mini' : 'gpt-4o',
+        temperature: 0.5,
+        max_tokens: 12000,
+        messages: [
+          {
+            role: "system",
+            content: "Anda adalah enjin ABQARI. WAJIB pastikan kesemua empat (4) tag [Aras: CX] [COx] [LOx] [Kod Domain] sentiasa ditulis lengkap di hujung setiap soalan. Bagi esei, letak nilai markah (contoh: (5 Markah)) di baris baharu berasingan.",
+          },
+          {
+            role: "user",
+            content: systemInstruction,
+          },
+        ],
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      throw new Error(data.error?.message || `Ralat Pelayan: ${res.status}`);
     }
 
-    if (!response || !response.text) {
-      throw new Error(lastError);
-    }
+    const generatedText = data.choices?.[0]?.message?.content;
 
-    const generatedText = response.text || '';
-
-    let qText = generatedText;
-    let sText = '';
-    const splitIdx = generatedText.indexOf('[PENJANAAN SKEMA JAWAPAN]');
-    if (splitIdx !== -1) {
-      qText = generatedText.substring(0, splitIdx).trim();
-      sText = generatedText.substring(splitIdx).replace('[PENJANAAN SKEMA JAWAPAN]', '').trim();
-    }
-
-    await supabase.from('archives').insert([
-      {
-        course_code: courseCode || 'TIADA',
-        subject_name: courseName || 'Subjek Tanpa Nama',
-        exam_period: examPeriod || 'JULAI 2026',
-        type: `Set ${setSoalan} (${theme})`,
-        generator_name: 'Prof. Dr. Ahmad Fakhruddin',
-        status: 'Selesai',
-        questions_text: qText,
-        scheme_text: sText
-      }
-    ]);
-
-    return NextResponse.json({ success: true, data: generatedText });
+    return NextResponse.json({
+      success: true,
+      text: generatedText,
+      data: generatedText,
+    });
   } catch (error: any) {
-    console.error('Ralat AI Penjana:', error);
-    
-    let userFriendlyMessage = 'Harap maaf, sistem ABQARI sedang mengalami sedikit kesesakan. Sila cuba sebentar lagi.';
-    
-    if (error.message && (error.message.includes('403') || error.message.includes('404') || error.message.includes('PERMISSION_DENIED') || error.message.includes('NOT_FOUND') || error.message.includes('quota'))) {
-      userFriendlyMessage = "Harap maaf, enjin AI ABQARI kini sedang dalam fasa naik taraf ke pelan Premium (Pro) oleh pelayan Google bagi menjamin kualiti soalan. Proses pengesahan ini sedang berjalan. Sila kembali dan cuba menjana soalan sebentar sahaja lagi. Terima kasih atas kesabaran anda!";
-    }
-
-    return NextResponse.json({ error: userFriendlyMessage }, { status: 500 });
+    console.error("❌ Ralat API:", error);
+    return NextResponse.json(
+      { error: error.message || "Gagal menjana soalan." },
+      { status: 500 }
+    );
   }
 }

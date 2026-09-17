@@ -7,12 +7,10 @@ import { saveAs } from 'file-saver';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 
-// Inisialisasi Supabase Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// --- DATA PEMETAAN ---
 const BLOOM_TAXONOMY = [
   { level: 'C1', name: 'Pengetahuan' },
   { level: 'C2', name: 'Pemahaman' },
@@ -33,6 +31,7 @@ const escapeXml = (unsafe: string) => {
   });
 };
 
+// DIKEMASKINI: Enjin Pemformatan MS Word (OOXML)
 const formatTextToOOXML = (text: string) => {
   if (!text) return '';
   const lines = text.split('\n');
@@ -48,16 +47,23 @@ const formatTextToOOXML = (text: string) => {
     let jc = '<w:jc w:val="both"/>'; 
     let ind = ''; let tabs = ''; let runContent = ''; let isBold = false;
     
-    // PEMBUANG TAG UNTUK MS WORD
-    let cleanText = trimmed.replace(/\*\*/g, '').replace(/\[(?:Aras|C|P|A|LO|CO)[^\]]*\]/gi, '').trim();
+    let cleanText = trimmed.replace(/\*\*/g, '').replace(/\[(?:Aras|Aras Bloom|CO|LO|PO|Domain|[CPA]\d*)[^\]]*\]/gi, '').trim();
 
+    // Pemadan Corak (Pattern Matcher)
     const optMatch = cleanText.match(/^([A-D]\.|[a-z]\))\s+(.*)/);
     const qMatch = cleanText.match(/^(\d+\.)\s+(.*)/);
+    const bulletMatch = cleanText.match(/^[-*]\s+(.*)/); // Kesan simbol dash/bullet (-)
+    const markMatch = cleanText.match(/^\(\d+\s*Markah\)$/i); // Kesan teks (X Markah)
 
     if (cleanText.startsWith('BAHAGIAN') || cleanText.startsWith('SOALAN')) {
       isBold = true;
       runContent = `<w:t xml:space="preserve">${escapeXml(cleanText)}</w:t>`;
     } 
+    else if (markMatch) {
+      // Jika ia adalah baris markah, tolak rata kanan (right align)
+      jc = '<w:jc w:val="right"/>';
+      runContent = `<w:t xml:space="preserve">${escapeXml(cleanText)}</w:t>`;
+    }
     else if (optMatch) {
       ind = '<w:ind w:left="1080" w:hanging="360"/>';
       tabs = '<w:tabs><w:tab w:val="left" w:pos="1080"/></w:tabs>';
@@ -68,6 +74,12 @@ const formatTextToOOXML = (text: string) => {
       tabs = '<w:tabs><w:tab w:val="left" w:pos="720"/></w:tabs>';
       runContent = `<w:t xml:space="preserve">${escapeXml(qMatch[1])}</w:t><w:tab/><w:t xml:space="preserve">${escapeXml(qMatch[2])}</w:t>`;
     } 
+    else if (bulletMatch) {
+      // Jika ia adalah senarai skema (-), selaraskan ia ke dalam di bawah teks nombor soalan
+      ind = '<w:ind w:left="1080" w:hanging="360"/>';
+      tabs = '<w:tabs><w:tab w:val="left" w:pos="1080"/></w:tabs>';
+      runContent = `<w:t xml:space="preserve">-</w:t><w:tab/><w:t xml:space="preserve">${escapeXml(bulletMatch[1])}</w:t>`;
+    }
     else {
       runContent = `<w:t xml:space="preserve">${escapeXml(cleanText)}</w:t>`;
     }
@@ -79,7 +91,6 @@ const formatTextToOOXML = (text: string) => {
   return xml;
 };
 
-// FUNGSI PINTAR: Memastikan susunan sentiasa "KOD - NAMA" secara sekata
 const formatSubjectDisplay = (code: string, name: string) => {
   let c = code && code !== 'TIADA' ? code.trim() : '';
   let n = name ? name.trim() : '';
@@ -104,7 +115,6 @@ export default function PenjanaSoalanPage() {
   const [subjects, setSubjects] = useState<any[]>([]);
   const [selectedSubject, setSelectedSubject] = useState('');
 
-  // State Profil Pengguna Dinamik Supabase
   const [userProfile, setUserProfile] = useState<{
     name: string;
     faculty: string;
@@ -120,6 +130,8 @@ export default function PenjanaSoalanPage() {
   const [theme, setTheme] = useState('Semua Tema');
   const [setSoalan, setSetSoalan] = useState('1');
   
+  const [aiModel, setAiModel] = useState('gpt-4o');
+
   const [subjectCOs, setSubjectCOs] = useState<string[]>([]);
   const [subjectLOs, setSubjectLOs] = useState<string[]>([]);
 
@@ -127,17 +139,15 @@ export default function PenjanaSoalanPage() {
     { name: '', percentage: '' }
   ]);
 
-  const [sections, setSections] = useState({
-    A: { enabled: true, type: 'objektif', count: 20, marks: 20 },
-    B: { enabled: true, type: 'true_false', count: 20, marks: 20 },
-    C: { enabled: true, type: 'essay', count: 2, marks: 20 }
+  const [sections, setSections] = useState<any>({
+    A: { enabled: true, type: 'objektif', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 } },
+    B: { enabled: true, type: 'true_false', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 } },
+    C: { enabled: true, type: 'essay', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 } }
   });
 
-  // --- STATE KAWALAN SOALAN BERTINGKAT (DISEMBUNYIKAN UI) ---
   const [enableSubQuestions, setEnableSubQuestions] = useState(false);
   const [subQuestionCount, setSubQuestionCount] = useState(5);
 
-  const [bloomCounts, setBloomCounts] = useState({ C1: 10, C2: 10, C3: 5, C4: 5, C5: 0, C6: 0 });
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedQuestions, setGeneratedQuestions] = useState<string | null>(null);
   const [generatedScheme, setGeneratedScheme] = useState<string | null>(null);
@@ -149,13 +159,11 @@ export default function PenjanaSoalanPage() {
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState('');
 
-  // Pembantu untuk mendapatkan Token Pengesahan Sesi Supabase
   const getAuthHeaders = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
   };
 
-  // 1. Pengambilan Profil Pengguna Dinamik (Supabase Auth / LocalStorage)
   useEffect(() => {
     const fetchUserProfile = async () => {
       try {
@@ -185,7 +193,6 @@ export default function PenjanaSoalanPage() {
     fetchUserProfile();
   }, []);
 
-  // DIKEMAS KINI: Memanggil senarai subjek dengan Bearer Token
   useEffect(() => {
     const fetchSubjects = async () => {
       try {
@@ -223,7 +230,7 @@ export default function PenjanaSoalanPage() {
   };
 
   const updateSection = (part: 'A' | 'B' | 'C', field: string, value: any) => {
-    setSections(prev => ({ ...prev, [part]: { ...prev[part], [field]: value } }));
+    setSections((prev: any) => ({ ...prev, [part]: { ...prev[part], [field]: value } }));
   };
 
   const addTopic = () => setTopicDistribution([...topicDistribution, { name: '', percentage: '' }]);
@@ -234,10 +241,27 @@ export default function PenjanaSoalanPage() {
     setTopicDistribution(newTopics);
   };
 
+  const getRequestedBloomCounts = () => {
+    const counts = { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 };
+    (['A', 'B', 'C'] as const).forEach(part => {
+      if (sections[part].enabled) {
+        counts.C1 += (Number(sections[part].bloom.C1) || 0);
+        counts.C2 += (Number(sections[part].bloom.C2) || 0);
+        counts.C3 += (Number(sections[part].bloom.C3) || 0);
+        counts.C4 += (Number(sections[part].bloom.C4) || 0);
+        counts.C5 += (Number(sections[part].bloom.C5) || 0);
+        counts.C6 += (Number(sections[part].bloom.C6) || 0);
+      }
+    });
+    return counts;
+  };
+
+  const requestedBloomCounts = getRequestedBloomCounts();
+
   const getGeneratedCounts = () => {
     const counts = { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 };
     if (!generatedQuestions) return counts;
-    const matches = generatedQuestions.match(/\[Aras:\s*C([1-6])\]/gi);
+    const matches = generatedQuestions.match(/\[Aras(?: Bloom)?:\s*C([1-6])\]/gi);
     if (matches) {
       matches.forEach(m => {
         if (m.includes('1')) counts.C1++; if (m.includes('2')) counts.C2++;
@@ -249,9 +273,10 @@ export default function PenjanaSoalanPage() {
   };
 
   const renderHighlightedText = (text: string) => {
-    const parts = text.split(/(\[(?:Aras|C|P|A|LO|CO)[^\]]*\])/gi);
+    if (!text) return null;
+    const parts = text.split(/(\[(?:Aras|Aras Bloom|CO\d*|LO\d*|PO\d*|C\d+|P\d+|A\d+)[^\]]*\])/gi);
     return parts.map((part, index) => {
-      const arasMatch = part.match(/\[Aras:\s*C([1-6])\]/i);
+      const arasMatch = part.match(/\[Aras(?: Bloom)?:\s*C([1-6])\]/i);
       if (arasMatch) {
         const level = arasMatch[1]; let bgColor, textColor, borderColor;
         switch(level) {
@@ -263,12 +288,22 @@ export default function PenjanaSoalanPage() {
           case '6': bgColor = '#fee2e2'; textColor = '#991b1b'; borderColor = '#fca5a5'; break;
           default: bgColor = '#f1f5f9'; textColor = '#334155'; borderColor = '#cbd5e1';
         }
-        return <span key={index} style={{ backgroundColor: bgColor, color: textColor, fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid ${borderColor}`, marginLeft: '6px', fontSize: '0.8rem' }}>{part}</span>;
+        return <span key={index} style={{ backgroundColor: bgColor, color: textColor, fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid ${borderColor}`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part}</span>;
       }
-      if (part.match(/\[C:/i)) return <span key={index} style={{ backgroundColor: '#e0f2fe', color: '#0369a1', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #7dd3fc`, marginLeft: '6px', fontSize: '0.8rem' }}>{part}</span>;
-      if (part.match(/\[P:/i)) return <span key={index} style={{ backgroundColor: '#fce7f3', color: '#be185d', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #f9a8d4`, marginLeft: '6px', fontSize: '0.8rem' }}>{part}</span>;
-      if (part.match(/\[A:/i)) return <span key={index} style={{ backgroundColor: '#ffedd5', color: '#c2410c', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #fdba74`, marginLeft: '6px', fontSize: '0.8rem' }}>{part}</span>;
-      if (part.match(/\[LO:/i)) return <span key={index} style={{ backgroundColor: '#f5f3ff', color: '#6d28d9', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #c4b5fd`, marginLeft: '6px', fontSize: '0.8rem' }}>{part}</span>;
+      if (part.match(/\[CO\d*\]/i) || part.match(/\[CO:/i)) 
+        return <span key={index} style={{ backgroundColor: '#e0f2fe', color: '#0369a1', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #7dd3fc`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part}</span>;
+      
+      if (part.match(/\[LO\d*\]/i) || part.match(/\[PO\d*\]/i) || part.match(/\[LO:/i)) 
+        return <span key={index} style={{ backgroundColor: '#f5f3ff', color: '#6d28d9', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #c4b5fd`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part}</span>;
+      
+      if (part.match(/\[A[1-5]\]/i) || part.match(/\[A:/i)) 
+        return <span key={index} style={{ backgroundColor: '#ffedd5', color: '#c2410c', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #fdba74`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part}</span>;
+      
+      if (part.match(/\[P[1-7]\]/i) || part.match(/\[P:/i)) 
+        return <span key={index} style={{ backgroundColor: '#fce7f3', color: '#be185d', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #f9a8d4`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part}</span>;
+      
+      if (part.match(/\[C[1-6]\]/i) || part.match(/\[C:/i)) 
+        return <span key={index} style={{ backgroundColor: '#ccfbf1', color: '#0f766e', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #5eead4`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part}</span>;
       
       return part;
     });
@@ -284,7 +319,7 @@ export default function PenjanaSoalanPage() {
     const counts = getGeneratedCounts();
     let tableHtml = `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%; font-family: 'Arial', sans-serif; font-size: 11pt; margin-bottom: 20px;"><thead><tr style="background-color: #f1f5f9;"><th style="text-align: left;">Aras Bloom</th><th style="text-align: center;">Sasaran (Diminta)</th><th style="text-align: center;">Jumlah Dikesan (AI)</th><th style="text-align: center;">Status</th></tr></thead><tbody>`;
     BLOOM_TAXONOMY.forEach(b => {
-      const req = bloomCounts[b.level as keyof typeof bloomCounts];
+      const req = requestedBloomCounts[b.level as keyof typeof requestedBloomCounts];
       const gen = counts[b.level as keyof typeof counts];
       const status = (req === gen ? 'Tepat' : 'Berbeza');
       tableHtml += `<tr><td><strong>${b.level} - ${b.name}</strong></td><td align="center">${req}</td><td align="center"><strong>${gen}</strong></td><td align="center">${status}</td></tr>`;
@@ -293,11 +328,6 @@ export default function PenjanaSoalanPage() {
 
     let formattedText = generatedQuestions || '';
     formattedText = formattedText.replace(/\n/g, '<br>');
-    formattedText = formattedText.replace(/(\[Aras:\s*C[1-6]\])/gi, '<span style="background-color: #dbeafe; color: #1e40af; font-weight: bold; padding: 2px 6px; border-radius: 4px; border: 1px solid #93c5fd; margin-left: 6px; font-size: 0.8rem;">$1</span>');
-    formattedText = formattedText.replace(/(\[C:[^\]]*\])/gi, '<span style="background-color: #e0f2fe; color: #0369a1; font-weight: bold; padding: 2px 6px; border-radius: 4px; border: 1px solid #7dd3fc; margin-left: 6px; font-size: 0.8rem;">$1</span>');
-    formattedText = formattedText.replace(/(\[P:[^\]]*\])/gi, '<span style="background-color: #fce7f3; color: #be185d; font-weight: bold; padding: 2px 6px; border-radius: 4px; border: 1px solid #f9a8d4; margin-left: 6px; font-size: 0.8rem;">$1</span>');
-    formattedText = formattedText.replace(/(\[A:[^\]]*\])/gi, '<span style="background-color: #ffedd5; color: #c2410c; font-weight: bold; padding: 2px 6px; border-radius: 4px; border: 1px solid #fdba74; margin-left: 6px; font-size: 0.8rem;">$1</span>');
-    formattedText = formattedText.replace(/(\[LO:[^\]]*\])/gi, '<span style="background-color: #f5f3ff; color: #6d28d9; font-weight: bold; padding: 2px 6px; border-radius: 4px; border: 1px solid #c4b5fd; margin-left: 6px; font-size: 0.8rem;">$1</span>');
 
     const htmlContent = `
       <html>
@@ -390,7 +420,7 @@ export default function PenjanaSoalanPage() {
         "kertas_soalan": formatTextToOOXML(generatedQuestions) 
       });
       const out = doc.getZip().generate({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      saveAs(out, `${courseCode}_Kertas_Soalan_Format_UiTM.docx`);
+      saveAs(out, `${courseCode}_Kertas_Soalan_SET_${setSoalan}.docx`);
     } catch (error) { alert(`Gagal menjana Word. Pastikan fail (Template_Soalan_1.docx, _2.docx, _3.docx) wujud di dalam folder public.`); }
   };
 
@@ -403,11 +433,10 @@ export default function PenjanaSoalanPage() {
       const zip = new PizZip(arrayBuffer); const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
       doc.render({ "SUBJEK SUMBER": courseName, "KOD KURSUS": courseCode, "PEPERIKSAAN": examPeriod, "SKEMA": formatTextToOOXML(generatedScheme) });
       const out = doc.getZip().generate({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      saveAs(out, `${courseCode}_Skema_Jawapan_Format_UiTM.docx`);
+      saveAs(out, `${courseCode}_Skema_Jawapan_SET_${setSoalan}.docx`);
     } catch (error) { alert('Gagal menjana Word: Pastikan tag {@SKEMA} wujud.'); }
   };
 
-  // DIKEMAS KINI: Menghantar Token Bearer kepada API AI /generate-questions
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSubject) return alert('Sila pilih subjek terlebih dahulu.');
@@ -450,9 +479,10 @@ export default function PenjanaSoalanPage() {
           ...authHeaders
         },
         body: JSON.stringify({ 
-           subjectId: selectedSubject, courseName, courseCode, examPeriod, duration, theme, sections: finalSections, bloomCounts, setSoalan,
+           subjectId: selectedSubject, courseName, courseCode, examPeriod, duration, theme, sections: finalSections, bloomCounts: requestedBloomCounts, setSoalan,
            co: subjectCOs, lo: subjectLOs, topicDistribution: activeTopics,
-           subQuestions: { enabled: enableSubQuestions, count: enableSubQuestions ? subQuestionCount : 0 }
+           subQuestions: { enabled: enableSubQuestions, count: enableSubQuestions ? subQuestionCount : 0 },
+           aiModel: aiModel 
         }),
       });
       const json = await response.json();
@@ -460,15 +490,23 @@ export default function PenjanaSoalanPage() {
       setTimeout(() => {
         if (response.ok && json.success) {
            const fullText = json.data;
-           const splitIndex = fullText.indexOf('[PENJANAAN SKEMA JAWAPAN]');
+           
+           let splitIndex = fullText.indexOf('[PENJANAAN SKEMA JAWAPAN]');
+           if (splitIndex === -1) splitIndex = fullText.indexOf('# BAHAGIAN 2');
+           if (splitIndex === -1) splitIndex = fullText.indexOf('--- PEMISAH: SKEMA JAWAPAN ---');
+
            if (splitIndex !== -1) {
                setGeneratedQuestions(fullText.substring(0, splitIndex).trim());
-               setGeneratedScheme(fullText.substring(splitIndex).replace('[PENJANAAN SKEMA JAWAPAN]', '').trim());
+               let schemePart = fullText.substring(splitIndex)
+                 .replace('[PENJANAAN SKEMA JAWAPAN]', '')
+                 .replace('# BAHAGIAN 2: SKEMA JAWAPAN DAN AGIHAN MARKAH', '')
+                 .trim();
+               setGeneratedScheme(schemePart);
            } else {
-              setGeneratedQuestions(fullText); setGeneratedScheme("Sila salin skema secara manual.");
+              setGeneratedQuestions(fullText); 
+              setGeneratedScheme("Sila salin skema secara manual.");
            }
         } else {
-            // PENAPIS TAMBAHAN: Buang perkataan 'bertaraf universiti' terus di frontend sebagai langkah keselamatan
             let errMsg = json.error || 'Gagal menjana soalan.';
             errMsg = errMsg.replace(' bertaraf universiti', '').replace('bertaraf universiti', '');
             setGeneratedQuestions(`Ralat: ${errMsg}`);
@@ -481,7 +519,6 @@ export default function PenjanaSoalanPage() {
   const generatedCounts = getGeneratedCounts();
   const currentTotalPct = topicDistribution.reduce((sum, t) => sum + Number(t.percentage || 0), 0);
 
-  // GAYA CSS INLINE UTAMA
   const styles = {
     card: { backgroundColor: 'white', padding: '25px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '25px', position: 'relative' as 'relative', zIndex: 1 },
     sectionTitle: { marginTop: 0, color: '#0f172a', fontSize: '1.15rem', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px', marginBottom: '20px', fontWeight: 'bold' as 'bold' },
@@ -492,7 +529,6 @@ export default function PenjanaSoalanPage() {
   return (
     <div style={{ backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '"Inter", "Segoe UI", sans-serif', position: 'relative' }}>
       
-      {/* 1. LATAR BELAKANG UNGU & CORAK BINTANG LAPAN PENJURU */}
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, height: '340px',
         background: 'linear-gradient(135deg, #3b0764, #4a154b)', 
@@ -501,10 +537,8 @@ export default function PenjanaSoalanPage() {
         zIndex: 0
       }} />
 
-      {/* KANDUNGAN UTAMA */}
       <div style={{ maxWidth: '1250px', margin: '0 auto', padding: '40px 20px', position: 'relative', zIndex: 1 }}>
       
-        {/* MODAL SEMAKAN & EDIT */}
         {showLevelModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
             <div style={{ backgroundColor: 'white', padding: '35px', borderRadius: '16px', width: '90%', maxWidth: '950px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)' }}>
@@ -518,7 +552,7 @@ export default function PenjanaSoalanPage() {
                   <thead><tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}><th style={{ padding: '12px', textAlign: 'left', color: '#475569' }}>Aras Bloom</th><th style={{ padding: '12px', textAlign: 'center', color: '#475569' }}>Sasaran (Diminta)</th><th style={{ padding: '12px', textAlign: 'center', color: '#475569' }}>Jumlah Dikesan</th><th style={{ padding: '12px', textAlign: 'center', color: '#475569' }}>Status</th></tr></thead>
                   <tbody>
                     {BLOOM_TAXONOMY.map(b => {
-                      const req = bloomCounts[b.level as keyof typeof bloomCounts];
+                      const req = requestedBloomCounts[b.level as keyof typeof requestedBloomCounts];
                       const gen = generatedCounts[b.level as keyof typeof generatedCounts];
                       return (
                         <tr key={b.level} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -550,7 +584,7 @@ export default function PenjanaSoalanPage() {
                   <textarea value={tempEditedQuestions} onChange={(e) => setTempEditedQuestions(e.target.value)} style={{ width: '100%', minHeight: '350px', padding: '20px', fontFamily: 'monospace', fontSize: '0.9rem', border: '2px solid #3b82f6', borderRadius: '8px', outline: 'none' }} />
                 ) : (
                   <>
-                    <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '15px', marginTop: 0 }}>*Peringatan: Kesemua tag pewarnaan [Aras, C, P, A, LO] ini secara automatik <strong>tidak dipaparkan</strong> dalam fail MS Word muat turun.</p>
+                    <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '15px', marginTop: 0 }}>*Peringatan: Kesemua tag pewarnaan [Aras, CO, LO, Domain] ini secara automatik <strong>tidak dipaparkan</strong> dalam fail MS Word muat turun.</p>
                     <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.9rem', color: '#1e293b', backgroundColor: '#ffffff', padding: '25px', borderRadius: '8px', border: '1px solid #e2e8f0', margin: 0, maxHeight: '400px', overflowY: 'auto', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
                       {generatedQuestions ? renderHighlightedText(generatedQuestions) : 'Tiada soalan dijana.'}
                     </pre>
@@ -582,7 +616,6 @@ export default function PenjanaSoalanPage() {
             </p>
           </div>
 
-          {/* NAIF: PENJURA ATAS NAMA PENGGUNA DINAMIK */}
           <div style={{ color: 'white', textAlign: 'right', fontSize: '0.85rem', marginTop: '8px' }}>
             <strong style={{ fontSize: '0.95rem', display: 'block' }}>{userProfile.name}</strong>
             <span style={{ color: '#cbd5e1' }}>{userProfile.faculty}</span>
@@ -591,7 +624,6 @@ export default function PenjanaSoalanPage() {
 
         <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
           
-          {/* PANEL KIRI (KAWALAN PARAMETER) */}
           <div style={{ flex: '1 1 480px', display: 'flex', flexDirection: 'column' }}>
             
             <div style={styles.card}>
@@ -610,7 +642,7 @@ export default function PenjanaSoalanPage() {
                 <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f8fafc', borderRadius: '8px', borderLeft: '4px solid #3b82f6', fontSize: '0.85rem' }}>
                   <span style={{ color: '#475569', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>Pemetaan Subjek:</span>
                   <span style={{ color: '#0369a1' }}>• Domain (C/P/A):</span> {subjectCOs.length > 0 ? subjectCOs.join(', ') : 'Tiada'}<br/>
-                  <span style={{ color: '#6d28d9' }}>• LO:</span> {subjectLOs.length > 0 ? subjectLOs.join(', ') : 'Tiada'}
+                  <span style={{ color: '#6d28d9' }}>• LO / PLO:</span> {subjectLOs.length > 0 ? subjectLOs.join(', ') : 'Tiada'}
                 </div>
               )}
 
@@ -619,11 +651,13 @@ export default function PenjanaSoalanPage() {
                    <label style={{...styles.label, color: '#16a34a'}}>Tema Soalan</label>
                    <select value={theme} onChange={(e) => setTheme(e.target.value)} style={{...styles.input, borderColor: '#86efac', backgroundColor: '#f0fdf4'}}>
                      <option value="Semua Tema">Semua Tema</option>
-                     <option value="Agama">Agama</option><option value="Falsafah">Falsafah</option><option value="Saintifik">Saintifik</option>
+                     <option value="Agama">Agama</option>
+                     <option value="Falsafah">Falsafah</option>
+                     <option value="Saintifik">Saintifik</option>
                    </select>
                  </div>
                  <div>
-                   <label style={{...styles.label, color: '#0284c7'}}>Set Soalan</label>
+                   <label style={{...styles.label, color: '#0284c7'}}>Set Soalan (Reshuffle)</label>
                    <select value={setSoalan} onChange={(e) => setSetSoalan(e.target.value)} style={{...styles.input, borderColor: '#bae6fd', backgroundColor: '#f0f9ff'}}>
                      {[1,2,3,4,5].map(n => <option key={n} value={n}>Set {n}</option>)}
                    </select>
@@ -635,11 +669,28 @@ export default function PenjanaSoalanPage() {
                 <div><label style={styles.label}>Sesi Peperiksaan</label><input type="text" value={examPeriod} onChange={e => setExamPeriod(e.target.value)} style={styles.input} /></div>
               </div>
               <div style={{ marginBottom: '15px' }}><label style={styles.label}>Nama Kursus</label><input type="text" value={courseName} onChange={e => setCourseName(e.target.value)} style={styles.input} /></div>
-              <div><label style={styles.label}>Masa Peperiksaan</label><input type="text" value={duration} onChange={e => setDuration(e.target.value)} style={styles.input} /></div>
+              <div style={{ marginBottom: '15px' }}><label style={styles.label}>Masa Peperiksaan</label><input type="text" value={duration} onChange={e => setDuration(e.target.value)} style={styles.input} /></div>
+
+              <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px dashed #e2e8f0' }}>
+                <label style={{ ...styles.label, color: '#4c1d95', fontWeight: 'bold' }}>
+                  Enjin AI Penjana (OpenAI)
+                </label>
+                <select 
+                  value={aiModel} 
+                  onChange={(e) => setAiModel(e.target.value)} 
+                  style={{ ...styles.input, borderColor: '#c084fc', backgroundColor: '#faf5ff', fontWeight: '600', color: '#581c87' }}
+                >
+                  <option value="gpt-4o">🧠 OpenAI GPT-4o (Premium, Paling Pintar & Tepat)</option>
+                  <option value="gpt-4o-mini">⚡ OpenAI GPT-4o-Mini (Pantas & Jimat Kos)</option>
+                </select>
+                <span style={{ fontSize: '0.75rem', color: '#7e22ce', marginTop: '5px', display: 'block', lineHeight: '1.4' }}>
+                  * Disyorkan menggunakan <strong>GPT-4o</strong> untuk pematuhan aras Taksonomi Bloom (C5-C6) dan pengiraan kuantiti soalan yang tepat mengikut JSU.
+                </span>
+              </div>
             </div>
 
             <div style={styles.card}>
-              <h3 style={styles.sectionTitle}>2. Tetapan Bahagian Soalan</h3>
+              <h3 style={styles.sectionTitle}>2. Tetapan Bahagian Soalan (Berserta JSU)</h3>
               {(['A', 'B', 'C'] as const).map(part => (
                 <div key={part} style={{ marginBottom: '15px', padding: '15px', backgroundColor: sections[part].enabled ? '#ffffff' : '#f8fafc', borderRadius: '10px', border: sections[part].enabled ? '1px solid #cbd5e1' : '1px dashed #cbd5e1', transition: 'all 0.3s' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: sections[part].enabled ? '12px' : '0' }}>
@@ -649,17 +700,56 @@ export default function PenjanaSoalanPage() {
                     </label>
                   </div>
                   {sections[part].enabled && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px' }}>
-                      <div><span style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '4px', display: 'block' }}>Format</span><select value={sections[part].type} onChange={e => updateSection(part, 'type', e.target.value)} style={styles.input}><option value="objektif">Objektif (A,B,C,D)</option><option value="true_false">Benar / Salah</option><option value="essay">Subjektif / Esei</option></select></div>
-                      <div><span style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '4px', display: 'block' }}>Bil. Soalan</span><input type="number" min="0" value={sections[part].count} onChange={e => updateSection(part, 'count', Number(e.target.value))} style={styles.input} /></div>
-                      <div><span style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '4px', display: 'block' }}>Markah</span><input type="number" min="0" value={sections[part].marks} onChange={e => updateSection(part, 'marks', Number(e.target.value))} style={styles.input} /></div>
-                    </div>
+                    <>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr 1.2fr', gap: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '4px', display: 'block' }}>Format</span>
+                          <select value={sections[part].type} onChange={e => updateSection(part, 'type', e.target.value)} style={styles.input}>
+                            <option value="objektif">Objektif (A,B,C,D)</option>
+                            <option value="true_false">Benar / Salah</option>
+                            <option value="essay">Subjektif / Esei</option>
+                          </select>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '4px', display: 'block' }}>Bil. Soalan</span>
+                          <input type="number" min="0" value={sections[part].count} onChange={e => updateSection(part, 'count', Number(e.target.value))} style={styles.input} />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '4px', display: 'block' }}>Markah Keseluruhan</span>
+                          <input type="number" min="0" value={sections[part].marks} onChange={e => updateSection(part, 'marks', Number(e.target.value))} style={styles.input} />
+                        </div>
+                      </div>
+                      
+                      <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#f1f5f9', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#334155' }}>Pecahan Aras Bloom:</span>
+                          <span style={{ fontSize: '0.7rem', color: (Number(sections[part].bloom.C1) + Number(sections[part].bloom.C2) + Number(sections[part].bloom.C3) + Number(sections[part].bloom.C4) + Number(sections[part].bloom.C5) + Number(sections[part].bloom.C6)) === sections[part].count ? '#16a34a' : '#dc2626', fontWeight: 'bold' }}>
+                            Jumlah: {(Number(sections[part].bloom.C1) + Number(sections[part].bloom.C2) + Number(sections[part].bloom.C3) + Number(sections[part].bloom.C4) + Number(sections[part].bloom.C5) + Number(sections[part].bloom.C6))} / {sections[part].count}
+                          </span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
+                          {['C1', 'C2', 'C3', 'C4', 'C5', 'C6'].map(level => (
+                            <div key={level} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                              <label style={{ fontSize: '0.7rem', color: '#475569', fontWeight: 'bold', marginBottom: '4px' }}>{level}</label>
+                              <input 
+                                type="number" min="0" 
+                                value={sections[part].bloom?.[level] ?? 0} 
+                                onChange={e => {
+                                  const val = Number(e.target.value);
+                                  setSections((prev: any) => ({ ...prev, [part]: { ...prev[part], bloom: { ...prev[part].bloom, [level]: val } } }));
+                                }} 
+                                style={{ width: '100%', padding: '6px', textAlign: 'center', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }} 
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
               ))}
             </div>
 
-            {/* SEKSYEN KAWALAN BERTINGKAT - DISEMBUNYIKAN SEPERTI DIMINTA (display: none) */}
             <div style={{ ...styles.card, display: 'none' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: enableSubQuestions ? '15px' : '0' }}>
                 <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.15rem', fontWeight: 'bold' }}>
@@ -720,14 +810,21 @@ export default function PenjanaSoalanPage() {
             </div>
 
             <div style={styles.card}>
-              <h3 style={styles.sectionTitle}>4. Pemetaan Aras Bloom</h3>
+              <h3 style={styles.sectionTitle}>4. Pemetaan Keseluruhan <span style={{fontSize:'0.8rem', color:'#64748b', fontWeight:'normal'}}>(Rujukan Semakan)</span></h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
-                {BLOOM_TAXONOMY.map(b => (
-                  <div key={b.level} style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#334155', display: 'block', textAlign: 'center', marginBottom: '8px' }}>{b.level}</label>
-                    <input type="number" min="0" value={bloomCounts[b.level as keyof typeof bloomCounts]} onChange={e => setBloomCounts({ ...bloomCounts, [b.level]: Number(e.target.value) })} style={{...styles.input, textAlign: 'center', backgroundColor: '#ffffff', padding: '8px'}} />
-                  </div>
-                ))}
+                {BLOOM_TAXONOMY.map(b => {
+                   const totalLevel = (sections.A.enabled ? Number(sections.A.bloom[b.level]) || 0 : 0) + 
+                                      (sections.B.enabled ? Number(sections.B.bloom[b.level]) || 0 : 0) + 
+                                      (sections.C.enabled ? Number(sections.C.bloom[b.level]) || 0 : 0);
+                   return (
+                     <div key={b.level} style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                       <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#334155', display: 'block', textAlign: 'center', marginBottom: '8px' }}>{b.level}</label>
+                       <div style={{ textAlign: 'center', backgroundColor: '#ffffff', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 'bold', color: '#3b82f6' }}>
+                         {totalLevel} Soalan
+                       </div>
+                     </div>
+                   )
+                })}
               </div>
             </div>
 
@@ -736,7 +833,6 @@ export default function PenjanaSoalanPage() {
             </button>
           </div>
 
-          {/* PANEL KANAN (PRATONTON DOKUMEN) */}
           <div style={{ flex: '1 1 550px', backgroundColor: '#ffffff', padding: '30px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05)', minHeight: '800px', display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #f1f5f9', paddingBottom: '15px', marginBottom: '25px', flexWrap: 'wrap', gap: '10px' }}>
               <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.3rem', fontWeight: '800' }}>Pratonton Kertas Ujian</h3>
@@ -771,19 +867,18 @@ export default function PenjanaSoalanPage() {
                 </div>
               </div>
             ) : generatedQuestions ? (
-              // DIKEMAS KINI: Menambah textAlign secara kondisional. Jika ralat, ia akan justify. Jika soalan biasa, ia kekal left.
               <div style={{ flex: 1, whiteSpace: 'pre-wrap', fontFamily: '"Times New Roman", Times, serif', fontSize: '1.1rem', color: '#000000', backgroundColor: '#ffffff', padding: '40px 50px', borderRadius: '4px', border: '1px solid #cbd5e1', overflowY: 'auto', boxShadow: '0 0 15px rgba(0,0,0,0.05) inset', lineHeight: '1.6', textAlign: generatedQuestions.startsWith('Ralat:') ? 'justify' : 'left' }}>
-                  <div style={{ marginBottom: '50px'}}>{generatedQuestions}</div>
+                  <div style={{ marginBottom: '50px'}}>{renderHighlightedText(generatedQuestions)}</div>
                   {generatedScheme && (
                       <div style={{ borderTop: '2px dashed #94a3b8', paddingTop: '30px' }}>
                           <h4 style={{ color: '#166534', margin: '0 0 15px 0', fontFamily: '"Inter", sans-serif' }}>--- PEMISAH: SKEMA JAWAPAN ---</h4>
-                          <div>{generatedScheme}</div>
+                          <div>{renderHighlightedText(generatedScheme)}</div>
                       </div>
                   )}
               </div>
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', border: '2px dashed #e2e8f0', borderRadius: '12px', padding: '40px' }}>
-                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '15px', color: '#cbd5e1' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '15px', color: '#cbd5e1' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 2 2h12a2 2 0 0 2 2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                 <p style={{ margin: 0, fontSize: '1rem', fontWeight: '500' }}>Ruangan Kertas Ujian Kosong</p>
                 <p style={{ margin: '5px 0 0 0', fontSize: '0.85rem' }}>Lengkapkan parameter di sebelah kiri dan klik jana.</p>
               </div>
