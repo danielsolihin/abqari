@@ -66,7 +66,7 @@ export default function BankSoalanPage() {
     }
   };
 
-  // 2. Fetch Soalan (Ditapis Mengikut Pengguna & Subjek)
+  // 2. Fetch Soalan (Logik Baharu: Tapisan Mengikut subject_id pensyarah)
   const fetchQuestions = async () => {
     setIsLoading(true);
     try {
@@ -84,15 +84,33 @@ export default function BankSoalanPage() {
       const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
       const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
 
-      // Query pangkalan data Supabase secara terus
-      let query = supabase.from('questions').select('*, subjects(name, course_code)');
+      let allowedSubjectIds: string[] = [];
 
-      // JIKA BUKAN ADMIN: Hanya tarik soalan milik pensyarah tersebut
+      // Dapatkan senarai subject_id milik pensyarah terlebih dahulu
       if (!isAdminUser) {
-        query = query.eq('user_id', user.id);
+        const { data: mySubjects } = await supabase
+          .from('subjects')
+          .select('id')
+          .eq('user_id', user.id);
+          
+        allowedSubjectIds = mySubjects?.map(s => s.id) || [];
+        
+        // Jika pensyarah ini tiada subjek, maka tiada soalan patut dipaparkan
+        if (allowedSubjectIds.length === 0) {
+          setQuestions([]);
+          setIsLoading(false);
+          return;
+        }
       }
 
-      // Jika ada penapis subjek yang dipilih
+      let query = supabase.from('questions').select('*, subjects(name, course_code)');
+
+      // Jika BUKAN admin, papar soalan dalam senarai subjek yang dibenarkan sahaja
+      if (!isAdminUser) {
+        query = query.in('subject_id', allowedSubjectIds);
+      }
+
+      // Jika ada penapis subjek dipilih dalam UI
       if (selectedSubjectFilter) {
         query = query.eq('subject_id', selectedSubjectFilter);
       }
@@ -210,8 +228,6 @@ export default function BankSoalanPage() {
       (q.question_text || '').toLowerCase().includes(safeSearchQuery) ||
       (q.answer_scheme || '').toLowerCase().includes(safeSearchQuery);
       
-    // Semak sama ada Aras Bloom dipadankan
-    // q.bloom_level biasanya disimpan dalam huruf besar, cth: "C1"
     const safeBloomFilter = selectedBloomFilter.trim().toUpperCase();
     const matchesBloom = safeBloomFilter ? (q.bloom_level || '').toUpperCase() === safeBloomFilter : true;
     
