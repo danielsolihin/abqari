@@ -35,7 +35,7 @@ function PusatSumberContent() {
   const [filterSubjectId, setFilterSubjectId] = useState('');
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
 
-  // Pembantu Token Pengesahan Sesi Supabase
+  // Pembantu Token Pengesahan Sesi Supabase (Hanya untuk Muat Naik & Padam)
   const getAuthHeaders = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
@@ -80,14 +80,26 @@ function PusatSumberContent() {
     }
   }, [searchParams]);
 
-  // 3. Fungsi Fetch API
+  // 3. FUNGSI FETCH REAL-TIME (Tarik Terus Dari Pangkalan Data Untuk Elak Cache)
   const fetchDocuments = async () => {
     setIsLoading(true);
     try {
-      const authHeaders = await getAuthHeaders();
-      const res = await fetch('/api/documents', { headers: { ...authHeaders } });
-      const json = await res.json();
-      if (json.success) setDocuments(json.data);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
+      const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
+
+      let query = supabase.from('documents').select('*').order('created_at', { ascending: false });
+
+      if (!isAdminUser) {
+        query = query.eq('user_id', user.id);
+      }
+
+      const { data, error } = await query;
+      if (data) {
+        setDocuments(data);
+      }
     } catch (error) {
       console.error('Ralat mengambil dokumen:', error);
     } finally {
@@ -97,10 +109,22 @@ function PusatSumberContent() {
 
   const fetchSubjects = async () => {
     try {
-      const authHeaders = await getAuthHeaders();
-      const res = await fetch('/api/subjects', { headers: { ...authHeaders } });
-      const json = await res.json();
-      if (json.success) setSubjects(json.data);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
+      const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
+
+      let query = supabase.from('subjects').select('*').order('name', { ascending: true });
+
+      if (!isAdminUser) {
+        query = query.eq('user_id', user.id);
+      }
+
+      const { data, error } = await query;
+      if (data) {
+        setSubjects(data);
+      }
     } catch (error) {
       console.error('Ralat mengambil subjek:', error);
     }
@@ -136,7 +160,7 @@ function PusatSumberContent() {
         setIsModalOpen(false);
         setFile(null);
         setSelectedSubjectId('');
-        fetchDocuments(); 
+        fetchDocuments(); // Segar semula senarai dokumen
       } else {
         alert(`Ralat Muat Naik: ${json.error || 'Gagal memproses.'}`);
       }
@@ -322,7 +346,7 @@ function PusatSumberContent() {
           {/* JADUAL DOKUMEN */}
           {isLoading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
-               <p>Memuatkan pangkalan data...</p>
+               <p>⏳ Memuatkan pangkalan data...</p>
             </div>
           ) : filteredDocuments.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1', color: '#64748b' }}>
