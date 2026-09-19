@@ -5,23 +5,24 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 
-// IMPORT KOMPONEN LENCANA KREDIT
 import CreditBadge from './components/CreditBadge';
 
-// Inisialisasi Supabase Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function DashboardUtama() {
   const router = useRouter();
+  
+  // STATE KESELAMATAN (TIRAI PENGESAHAN)
+  const [isSessionVerified, setIsSessionVerified] = useState(false);
+
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [loginTime, setLoginTime] = useState<Date | null>(null);
   const [lastLoginFormatted, setLastLoginFormatted] = useState<string>('...');
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // State Profil Pengguna Dinamik
   const [userProfile, setUserProfile] = useState<{
     name: string;
     faculty: string;
@@ -34,37 +35,32 @@ export default function DashboardUtama() {
   
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
-  // State Modal Kemaskini Butiran Profil
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
-  // State Statistik Dinamik Supabase
   const [stats, setStats] = useState({ subjects: 0, docs: 0, archives: 0, users: 0 });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-  // 1 & 2. Pengambilan Profil, Penyekatan Akses (Route Guard) & Penapisan Statistik
+  // 1. PENGESAHAN KESELAMATAN & PENARIKAN DATA
   useEffect(() => {
     const initializeDashboard = async () => {
       setIsLoadingStats(true);
       try {
         const { data: { user }, error } = await supabase.auth.getUser();
         
-        // 1. Tendang ke halaman login jika tiada sesi sah di Supabase
+        // 🛡️ SEKATAN 1: Jika tiada sesi (belum login), TENDANG KE LOGIN
         if (error || !user) {
           router.push('/login');
           return;
         }
 
-        // ====================================================================
-        // 🛡️ BLOK KESELAMATAN BERGANDA (HALANG AUTO-LOGIN & BYPASS)
-        // ====================================================================
         const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
         const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
         const isApproved = user.user_metadata?.is_approved === true || user.user_metadata?.status === 'approved';
 
-        // HALANGAN A: Jika belum diluluskan Admin, tendang keluar.
+        // 🛡️ SEKATAN 2: Jika akaun belum diluluskan Admin, TENDANG KELUAR
         if (!isAdminUser && !isApproved) {
           await supabase.auth.signOut();
           document.cookie = "abqari_session=; path=/; max-age=0;";
@@ -72,17 +68,9 @@ export default function DashboardUtama() {
           return;
         }
 
-        // HALANGAN B: Halang Auto-Login dari Link Pengesahan Emel
-        // Jika pengguna masuk tanpa cookie 'abqari_session' (hanya dijana di page login manual), tendang ke login!
-        const hasSessionCookie = document.cookie.includes('abqari_session=');
-        if (!hasSessionCookie) {
-          await supabase.auth.signOut();
-          router.push('/login');
-          return;
-        }
-        // ====================================================================
+        // Jika Lulus Keselamatan, paparkan Dashboard
+        setIsSessionVerified(true);
 
-        // Ambil Last Login sebenar daripada Supabase Auth
         if (user.last_sign_in_at) {
           const lastDate = new Date(user.last_sign_in_at);
           const timeStr = lastDate.toLocaleTimeString('en-MY', { 
@@ -93,7 +81,6 @@ export default function DashboardUtama() {
 
         setIsAdmin(isAdminUser);
 
-        // Tetapkan Profil ke UI & Form Modal
         const meta = user.user_metadata || {};
         setUserProfile({
           name: meta.full_name || meta.name || user.email?.split('@')[0] || 'Pensyarah',
@@ -104,12 +91,10 @@ export default function DashboardUtama() {
         setEditName(meta.full_name || meta.name || '');
         setEditPhone(meta.phone_number || '');
 
-        // Kuiri Statistik Asas
         let subQ = supabase.from('subjects').select('*', { count: 'exact', head: true });
         let docQ = supabase.from('documents').select('*', { count: 'exact', head: true });
         let arcQ = supabase.from('archives').select('*', { count: 'exact', head: true });
 
-        // Jika BUKAN admin, tapis data (hanya tunjuk data milik pensyarah tersebut)
         if (!isAdminUser) {
           subQ = subQ.eq('user_id', user.id);
           docQ = docQ.eq('user_id', user.id);
@@ -167,7 +152,6 @@ export default function DashboardUtama() {
     initializeDashboard();
   }, [router]);
 
-  // 3. Jam Sesi Real-Time
   useEffect(() => {
     const now = new Date();
     setLoginTime(now);
@@ -180,7 +164,6 @@ export default function DashboardUtama() {
     return () => clearInterval(timer);
   }, []);
 
-  // FUNGSI KEMASKINI GAMBAR PROFIL
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -206,7 +189,6 @@ export default function DashboardUtama() {
     reader.readAsDataURL(file);
   };
 
-  // FUNGSI KEMASKINI BUTIRAN (NAMA & TELEFON) MELALUI MODAL
   const handleSaveProfileDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingProfile(true);
@@ -362,6 +344,16 @@ export default function DashboardUtama() {
   ];
 
   const activeMenu = menuItems.filter(item => isAdmin || item.showForLecturer);
+
+  // 🛡️ TIRAI KESELAMATAN SEBELUM HALAMAN DIPAPARKAN
+  if (!isSessionVerified) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#3b0764', color: 'white', fontFamily: 'sans-serif' }}>
+        <h2 style={{ color: '#fde047', marginBottom: '10px' }}>ABQARI UiTM</h2>
+        <p style={{ opacity: 0.8 }}>🔒 Mengesahkan akses keselamatan...</p>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.page}>
