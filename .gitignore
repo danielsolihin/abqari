@@ -41,3 +41,6 @@ yarn-error.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Folder Sandaran (Menghalang Amaran & Semakan Git)
+_BACKUP_ABQARI_LAMA_/

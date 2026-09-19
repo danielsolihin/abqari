@@ -54,3 +54,21 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+// ==========================================
+// 3. POST: SIMPAN ARKIB BAHARU (AUTO-SIMPAN)
+// ==========================================
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    
+    // API ini menggunakan SERVICE_ROLE_KEY, jadi ia akan sentiasa berjaya menyimpan data
+    const { error } = await supabase.from('archives').insert([body]);
+
+    if (error) throw error;
+
+    return NextResponse.json({ success: true, message: 'Berjaya disimpan ke Arkib.' });
+  } catch (error: any) {
+    console.error('Ralat POST Archive:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}

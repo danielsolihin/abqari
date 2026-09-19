@@ -1,7 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { createClient } from '@supabase/supabase-js';
+import CreditBadge from '../components/CreditBadge';
+
+// Inisialisasi Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type Message = {
   role: 'user' | 'ai';
@@ -13,8 +20,42 @@ export default function ChatPage() {
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
 
-  // LOGIK ASAL ANDA DIKEKALKAN 100%
+  // ==========================================
+  // LOGIK MENARIK SUBJEK DARI SUPABASE 
+  // ==========================================
+  useEffect(() => {
+    async function fetchSubjects() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Tentukan jika Admin (untuk RLS/Penapisan)
+        const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
+        const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
+
+        let query = supabase.from('subjects').select('id, name, course_code');
+        
+        // Jika bukan admin, hanya tarik subjek ciptaan sendiri
+        if (!isAdminUser) {
+          query = query.eq('user_id', user.id);
+        }
+
+        const { data, error } = await query;
+        
+        if (error) throw error;
+        if (data) {
+          setSubjects(data);
+        }
+      } catch (err) {
+        console.error('Ralat mengambil subjek:', err);
+      }
+    }
+    fetchSubjects();
+  }, []);
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim()) return;
@@ -30,7 +71,7 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question: userMessage.content,
-          subjectId: null, 
+          subjectId: selectedSubjectId || null, 
         }),
       });
 
@@ -58,7 +99,6 @@ export default function ChatPage() {
     }
   };
 
-  // GAYA CSS INLINE UTAMA (TEMA ABQARI)
   const styles = {
     page: { backgroundColor: '#f1f5f9', minHeight: '100vh', fontFamily: '"Inter", "Segoe UI", sans-serif', position: 'relative' as 'relative', display: 'flex', flexDirection: 'column' as 'column' },
     banner: {
@@ -69,39 +109,38 @@ export default function ChatPage() {
       zIndex: 0
     },
     container: { flex: 1, display: 'flex', flexDirection: 'column' as 'column', maxWidth: '900px', margin: '0 auto', width: '100%', padding: '30px 20px', position: 'relative' as 'relative', zIndex: 1 },
+    topBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' },
     header: { textAlign: 'center' as 'center', marginBottom: '25px', color: 'white' },
-    backButton: { display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#fde047', textDecoration: 'none', fontWeight: '600', fontSize: '0.95rem', marginBottom: '20px', textShadow: '0 1px 3px rgba(0,0,0,0.3)' },
+    backButton: { display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#fde047', textDecoration: 'none', fontWeight: '600', fontSize: '0.95rem', textShadow: '0 1px 3px rgba(0,0,0,0.3)' },
     chatContainer: { flex: 1, backgroundColor: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' as 'column', overflow: 'hidden', minHeight: '500px' },
     chatBox: { flex: 1, padding: '25px', overflowY: 'auto' as 'auto', backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column' as 'column', gap: '20px' },
     
-    // Gaya Gelembung Sembang (Chat Bubbles)
     bubbleRow: { display: 'flex', width: '100%' },
     userBubble: { backgroundColor: '#3b0764', color: '#ffffff', padding: '14px 20px', borderRadius: '16px 16px 0 16px', maxWidth: '80%', marginLeft: 'auto', boxShadow: '0 2px 6px rgba(59, 7, 100, 0.2)', fontSize: '0.95rem', lineHeight: '1.5' },
     aiBubble: { backgroundColor: '#ffffff', color: '#0f172a', padding: '14px 20px', borderRadius: '16px 16px 16px 0', maxWidth: '85%', border: '1px solid #cbd5e1', boxShadow: '0 2px 6px rgba(0,0,0,0.05)', fontSize: '0.95rem', lineHeight: '1.6' },
     
-    // Gaya Kotak Rujukan Sumber RAG
     sourcesBox: { marginTop: '15px', backgroundColor: '#fef3c7', padding: '12px 15px', borderRadius: '8px', borderLeft: '4px solid #f59e0b', fontSize: '0.85rem' },
     
-    // Gaya Borang Input
-    formArea: { display: 'flex', gap: '10px', padding: '20px', backgroundColor: '#ffffff', borderTop: '1px solid #e2e8f0' },
+    formArea: { display: 'flex', flexDirection: 'column' as 'column', gap: '12px', padding: '20px', backgroundColor: '#ffffff', borderTop: '1px solid #e2e8f0' },
     inputField: { flex: 1, padding: '15px 20px', borderRadius: '30px', border: '1px solid #cbd5e1', fontSize: '1rem', outlineColor: '#3b82f6', backgroundColor: '#f1f5f9' },
-    sendBtn: { backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '30px', padding: '0 25px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', boxShadow: '0 4px 6px rgba(37,99,235,0.2)' }
+    selectField: { padding: '8px 15px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', outlineColor: '#3b0764', backgroundColor: '#f8fafc', color: '#334155', width: 'fit-content', cursor: 'pointer' },
+    sendBtn: { backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '30px', padding: '0 25px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', boxShadow: '0 4px 6px rgba(37,99,235,0.2)', height: '50px' }
   };
 
   return (
     <div style={styles.page}>
-      {/* LATAR BELAKANG UNGU TEMA ABQARI */}
       <div style={styles.banner} />
 
       <div style={styles.container}>
-        
-        {/* BUTANG KEMBALI */}
-        <Link href="/" style={styles.backButton}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-          Kembali ke Papan Pemuka
-        </Link>
+        <div style={styles.topBar}>
+          <Link href="/" style={styles.backButton}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            Kembali ke Papan Pemuka
+          </Link>
 
-        {/* TAJUK MODUL */}
+          <CreditBadge />
+        </div>
+
         <div style={styles.header}>
           <h1 style={{ fontSize: '2.2rem', fontWeight: '800', margin: '0 0 10px 0', textShadow: '0 2px 5px rgba(0,0,0,0.3)' }}>
             Pembantu AI (RAG)
@@ -111,9 +150,7 @@ export default function ChatPage() {
           </p>
         </div>
 
-        {/* RUANGAN CHAT UTAMA */}
         <div style={styles.chatContainer}>
-          
           <div style={styles.chatBox}>
             {messages.length === 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8', opacity: 0.7 }}>
@@ -128,7 +165,6 @@ export default function ChatPage() {
                 <div style={msg.role === 'user' ? styles.userBubble : styles.aiBubble}>
                   <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
                   
-                  {/* KOTAK RUJUKAN SUMBER (HANYA JIKA ADA) */}
                   {msg.role === 'ai' && msg.sources && msg.sources.length > 0 && (
                     <div style={styles.sourcesBox}>
                       <strong style={{ color: '#b45309', display: 'block', marginBottom: '8px' }}>🔍 Sumber Rujukan Ditemui:</strong>
@@ -154,20 +190,37 @@ export default function ChatPage() {
             )}
           </div>
 
-          {/* RUANGAN INPUT FORM */}
           <form onSubmit={handleSend} style={styles.formArea}>
-            <input
-              type="text"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder="Taip soalan anda di sini..."
-              style={styles.inputField}
-              disabled={isLoading}
-            />
-            <button type="submit" disabled={isLoading || !question.trim()} style={{ ...styles.sendBtn, opacity: (isLoading || !question.trim()) ? 0.6 : 1 }}>
-              Hantar
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b' }}>📚 Subjek Rujukan:</label>
+              <select 
+                value={selectedSubjectId} 
+                onChange={(e) => setSelectedSubjectId(e.target.value)}
+                style={styles.selectField}
+              >
+                <option value="">-- Semua Subjek / Rujukan Umum --</option>
+                {subjects.map((s, idx) => (
+                  <option key={s.id || idx} value={s.id}>
+                    {s.course_code && s.course_code !== 'TIADA' ? `${s.course_code} - ` : ''}{s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <input
+                type="text"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="Taip soalan anda di sini..."
+                style={styles.inputField}
+                disabled={isLoading}
+              />
+              <button type="submit" disabled={isLoading || !question.trim()} style={{ ...styles.sendBtn, opacity: (isLoading || !question.trim()) ? 0.6 : 1 }}>
+                Hantar
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+              </button>
+            </div>
           </form>
 
         </div>

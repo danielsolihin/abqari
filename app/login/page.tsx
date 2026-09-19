@@ -31,10 +31,25 @@ export default function LoginPage() {
 
       if (error) throw error;
 
-      // 2. Simpan Cookie keselamatan
-      document.cookie = "abqari_session=true; path=/; max-age=86400; SameSite=Lax";
+      const user = data.user;
+      if (!user) throw new Error('Ralat akaun pengguna.');
 
-      // 3. Muat semula halaman secara terus ke Papan Pemuka
+      // 2. BLOK KESELAMATAN: Semak Kelulusan Admin
+      const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
+      const isAdmin = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
+      const isApproved = user.user_metadata?.is_approved === true || user.user_metadata?.status === 'approved';
+
+      if (!isAdmin && !isApproved) {
+        await supabase.auth.signOut();
+        setErrorMsg('🔒 Akaun anda belum diluluskan oleh Admin ABQARI. Sila tunggu kelulusan rasmi yang akan dimaklumkan melalui Emel atau WhatsApp anda.');
+        setIsLoading(false);
+        return;
+      }
+
+      // 3. Simpan Cookie keselamatan
+      document.cookie = `abqari_session=${user.id}; path=/; max-age=86400; SameSite=Lax`;
+
+      // 4. Muat semula halaman secara terus ke Papan Pemuka
       window.location.href = '/';
       
     } catch (error: any) {
@@ -50,10 +65,6 @@ export default function LoginPage() {
 
   return (
     <>
-      {/* 
-        SUNTIKAN CSS MEDIA QUERY: 
-        Ini memastikan layout automatik tersusun (stack) atas & bawah pada telefon pintar
-      */}
       <style>{`
         .login-wrapper {
           display: flex;
@@ -72,7 +83,6 @@ export default function LoginPage() {
           font-size: 4.5rem;
         }
         
-        /* Tetapan Khusus Skrin Kecil / Telefon Bimbit */
         @media (max-width: 768px) {
           .login-wrapper {
             flex-direction: column;
@@ -217,6 +227,15 @@ export default function LoginPage() {
                   {isLoading ? 'Mengesahkan...' : 'Log Masuk ke Papan Pemuka'}
                 </button>
               </form>
+
+              {/* PAUTAN KE HALAMAN PENDAFTARAN BAHARU */}
+              <div style={{ marginTop: '25px', textAlign: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
+                <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Pengguna Baharu? </span>
+                <Link href="/register" style={{ fontSize: '0.85rem', color: '#3b0764', textDecoration: 'none', fontWeight: '800' }}>
+                  Daftar Akaun
+                </Link>
+              </div>
+
             </div>
 
             <div style={{ textAlign: 'center', marginTop: '30px', fontSize: '0.8rem', color: '#64748b' }}>
