@@ -11,7 +11,6 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // ============================================================================
 // SENARAI E-MEL SUPERADMIN (KEBAL)
-// E-mel ini tidak boleh dipadam, ditolak, dan sentiasa mempunyai akses penuh
 // ============================================================================
 const SUPERADMIN_EMAILS = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
 
@@ -75,7 +74,6 @@ export default function AdminDashboardPage() {
   };
 
   const handleUserAction = async (userObj: any, action: 'approve' | 'reject') => {
-    // BLOK KESELAMATAN SUPERADMIN
     if (SUPERADMIN_EMAILS.includes(userObj.email)) {
       alert('🛡️ RALAT KESELAMATAN: Akaun Superadmin adalah KEBAL dan tidak boleh ditolak atau dipadam.');
       return;
@@ -134,7 +132,6 @@ export default function AdminDashboardPage() {
   };
 
   const handleDeleteActiveUser = async (userObj: any) => {
-    // BLOK KESELAMATAN SUPERADMIN
     if (SUPERADMIN_EMAILS.includes(userObj.email)) {
       alert('🛡️ RALAT KESELAMATAN: Akaun Superadmin adalah KEBAL dan tidak boleh dipadam dari sistem.');
       return;
@@ -219,9 +216,6 @@ export default function AdminDashboardPage() {
 
   if (!isAdminAuth) return null;
 
-  // =========================================================================
-  // PEMPROSESAN DATA PENGGUNA (PASTIKAN SUPERADMIN SENTIASA AKTIF & KEBAL)
-  // =========================================================================
   const processedUsers = users.map(u => {
     if (SUPERADMIN_EMAILS.includes(u.email)) {
       return { ...u, is_approved: true, status: 'approved', role: 'admin', is_unlimited: true };
@@ -235,7 +229,7 @@ export default function AdminDashboardPage() {
   const styles = {
     page: { backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '"Inter", "Segoe UI", sans-serif', paddingBottom: '60px' },
     banner: { height: '220px', background: 'linear-gradient(135deg, #3b0764, #1e1b4b)', color: 'white', padding: '35px 20px', borderBottom: '4px solid #fde047' },
-    container: { maxWidth: '1400px', margin: '-50px auto 0 auto', padding: '0 20px', position: 'relative' as 'relative', zIndex: 10 },
+    container: { maxWidth: '1400px', margin: '-50px auto 0 auto', padding: '0 20px', position: 'relative' as const, zIndex: 10 },
     card: { backgroundColor: 'white', borderRadius: '16px', padding: '25px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.08)', marginBottom: '25px', border: '1px solid #e2e8f0' },
     
     tabBtn: (isActive: boolean) => ({
@@ -253,28 +247,27 @@ export default function AdminDashboardPage() {
       gap: '6px'
     }),
 
-    table: { width: '100%', borderCollapse: 'collapse' as 'collapse', fontSize: '0.88rem' },
-    th: { textAlign: 'left' as 'left', padding: '14px 12px', backgroundColor: '#f1f5f9', color: '#334155', fontWeight: '700', borderBottom: '2px solid #cbd5e1', whiteSpace: 'nowrap' as 'nowrap' },
-    td: { padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#334155', verticalAlign: 'middle' as 'middle' },
+    table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.88rem' },
+    th: { textAlign: 'left' as const, padding: '14px 12px', backgroundColor: '#f1f5f9', color: '#334155', fontWeight: '700', borderBottom: '2px solid #cbd5e1', whiteSpace: 'nowrap' as const },
+    td: { padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#334155', verticalAlign: 'middle' as const },
     
-    actionContainer: { display: 'flex', flexDirection: 'row' as 'row', gap: '6px', alignItems: 'center', justifyContent: 'flex-start', flexWrap: 'nowrap' as 'nowrap' },
+    actionContainer: { display: 'flex', flexDirection: 'row' as const, gap: '6px', alignItems: 'center', justifyContent: 'flex-start', flexWrap: 'nowrap' as const },
     
-    btnView: { backgroundColor: '#f59e0b', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' as 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '4px' },
-    btnApprove: { backgroundColor: '#10b981', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' as 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '4px' },
-    btnReject: { backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' as 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '4px' },
-    btnEdit: { backgroundColor: '#3b82f6', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' as 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '4px' },
-    btnCredit: { backgroundColor: '#8b5cf6', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' as 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '4px' },
+    btnView: { backgroundColor: '#f59e0b', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' as const, display: 'inline-flex', alignItems: 'center', gap: '4px' },
+    btnApprove: { backgroundColor: '#10b981', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' as const, display: 'inline-flex', alignItems: 'center', gap: '4px' },
+    btnReject: { backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' as const, display: 'inline-flex', alignItems: 'center', gap: '4px' },
+    btnEdit: { backgroundColor: '#3b82f6', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' as const, display: 'inline-flex', alignItems: 'center', gap: '4px' },
+    btnCredit: { backgroundColor: '#8b5cf6', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' as const, display: 'inline-flex', alignItems: 'center', gap: '4px' },
 
-    badgePending: { backgroundColor: '#fef3c7', color: '#b45309', padding: '5px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', whiteSpace: 'nowrap' as 'nowrap' },
-    badgeApproved: { backgroundColor: '#dcfce7', color: '#15803d', padding: '5px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', whiteSpace: 'nowrap' as 'nowrap' },
-    badgeCredit: { backgroundColor: '#f3e8ff', color: '#6b21a8', padding: '5px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', whiteSpace: 'nowrap' as 'nowrap' },
+    badgePending: { backgroundColor: '#fef3c7', color: '#b45309', padding: '5px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', whiteSpace: 'nowrap' as const },
+    badgeApproved: { backgroundColor: '#dcfce7', color: '#15803d', padding: '5px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', whiteSpace: 'nowrap' as const },
+    badgeCredit: { backgroundColor: '#f3e8ff', color: '#6b21a8', padding: '5px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', whiteSpace: 'nowrap' as const },
     
-    // Label Pentadbir Kebal
     kebalLabel: { fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '5px' },
 
-    modalOverlay: { position: 'fixed' as 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' },
+    modalOverlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' },
     modalBox: { backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '520px', padding: '25px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)' },
-    input: { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outlineColor: '#3b0764', backgroundColor: '#f8fafc', boxSizing: 'border-box' as 'boxSizing' },
+    input: { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outlineColor: '#3b0764', backgroundColor: '#f8fafc', boxSizing: 'border-box' as const },
     viewLabel: { display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#64748b', marginBottom: '4px' },
     viewData: { fontSize: '0.92rem', color: '#0f172a', fontWeight: '600', marginBottom: '14px', backgroundColor: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }
   };
