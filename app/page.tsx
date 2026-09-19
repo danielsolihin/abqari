@@ -51,11 +51,36 @@ export default function DashboardUtama() {
       try {
         const { data: { user }, error } = await supabase.auth.getUser();
         
-        // PENYELESAIAN ISU 1: Tendang ke halaman login jika tiada sesi sah
+        // 1. Tendang ke halaman login jika tiada sesi sah di Supabase
         if (error || !user) {
           router.push('/login');
           return;
         }
+
+        // ====================================================================
+        // 🛡️ BLOK KESELAMATAN BERGANDA (HALANG AUTO-LOGIN & BYPASS)
+        // ====================================================================
+        const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
+        const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
+        const isApproved = user.user_metadata?.is_approved === true || user.user_metadata?.status === 'approved';
+
+        // HALANGAN A: Jika belum diluluskan Admin, tendang keluar.
+        if (!isAdminUser && !isApproved) {
+          await supabase.auth.signOut();
+          document.cookie = "abqari_session=; path=/; max-age=0;";
+          router.push('/login');
+          return;
+        }
+
+        // HALANGAN B: Halang Auto-Login dari Link Pengesahan Emel
+        // Jika pengguna masuk tanpa cookie 'abqari_session' (hanya dijana di page login manual), tendang ke login!
+        const hasSessionCookie = document.cookie.includes('abqari_session=');
+        if (!hasSessionCookie) {
+          await supabase.auth.signOut();
+          router.push('/login');
+          return;
+        }
+        // ====================================================================
 
         // Ambil Last Login sebenar daripada Supabase Auth
         if (user.last_sign_in_at) {
@@ -66,9 +91,6 @@ export default function DashboardUtama() {
           setLastLoginFormatted(timeStr);
         }
 
-        // Semak status Admin
-        const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
-        const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
         setIsAdmin(isAdminUser);
 
         // Tetapkan Profil ke UI & Form Modal
@@ -184,7 +206,7 @@ export default function DashboardUtama() {
     reader.readAsDataURL(file);
   };
 
-  // PENYELESAIAN ISU 2: FUNGSI KEMASKINI BUTIRAN (NAMA & TELEFON)
+  // FUNGSI KEMASKINI BUTIRAN (NAMA & TELEFON) MELALUI MODAL
   const handleSaveProfileDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingProfile(true);
