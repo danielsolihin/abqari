@@ -14,9 +14,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export default function DashboardUtama() {
   const router = useRouter();
   
-  // STATE KESELAMATAN (TIRAI PENGESAHAN)
   const [isSessionVerified, setIsSessionVerified] = useState(false);
-
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [loginTime, setLoginTime] = useState<Date | null>(null);
@@ -26,31 +24,35 @@ export default function DashboardUtama() {
   const [userProfile, setUserProfile] = useState<{
     name: string;
     faculty: string;
+    email: string;
     avatarUrl: string | null;
   }>({
     name: 'Memuatkan...',
     faculty: 'UiTM',
+    email: '',
     avatarUrl: null,
   });
   
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
+  // KEMAS KINI: State Modal Kemaskini Butiran Profil yang diperluas
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const [editFaculty, setEditFaculty] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [changePassword, setChangePassword] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   const [stats, setStats] = useState({ subjects: 0, docs: 0, archives: 0, users: 0 });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-  // 1. PENGESAHAN KESELAMATAN & PENARIKAN DATA
   useEffect(() => {
     const initializeDashboard = async () => {
       setIsLoadingStats(true);
       try {
         const { data: { user }, error } = await supabase.auth.getUser();
         
-        // 🛡️ SEKATAN 1: Jika tiada sesi (belum login), TENDANG KE LOGIN
         if (error || !user) {
           router.push('/login');
           return;
@@ -60,7 +62,6 @@ export default function DashboardUtama() {
         const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
         const isApproved = user.user_metadata?.is_approved === true || user.user_metadata?.status === 'approved';
 
-        // 🛡️ SEKATAN 2: Jika akaun belum diluluskan Admin, TENDANG KELUAR
         if (!isAdminUser && !isApproved) {
           await supabase.auth.signOut();
           document.cookie = "abqari_session=; path=/; max-age=0;";
@@ -68,7 +69,13 @@ export default function DashboardUtama() {
           return;
         }
 
-        // Jika Lulus Keselamatan, paparkan Dashboard
+        const hasSessionCookie = document.cookie.includes('abqari_session=');
+        if (!hasSessionCookie) {
+          await supabase.auth.signOut();
+          router.push('/login');
+          return;
+        }
+
         setIsSessionVerified(true);
 
         if (user.last_sign_in_at) {
@@ -84,12 +91,14 @@ export default function DashboardUtama() {
         const meta = user.user_metadata || {};
         setUserProfile({
           name: meta.full_name || meta.name || user.email?.split('@')[0] || 'Pensyarah',
-          faculty: meta.faculty || 'Fakulti Pengajian Islam (FPI)',
+          faculty: meta.faculty || 'Fakulti / Jabatan',
+          email: user.email || '',
           avatarUrl: meta.avatar_url || null,
         });
         
         setEditName(meta.full_name || meta.name || '');
         setEditPhone(meta.phone_number || '');
+        setEditFaculty(meta.faculty || '');
 
         let subQ = supabase.from('subjects').select('*', { count: 'exact', head: true });
         let docQ = supabase.from('documents').select('*', { count: 'exact', head: true });
@@ -164,49 +173,99 @@ export default function DashboardUtama() {
     return () => clearInterval(timer);
   }, []);
 
+  // KEMAS KINI 1: FUNGSI PEMAMPATAN & MUAT NAIK GAMBAR PROFIL
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      alert('Maksimum saiz gambar profil ialah 2MB.');
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Fail terlalu besar. Sila pilih gambar bersaiz kurang dari 5MB.');
       return;
     }
 
     setIsUploadingAvatar(true);
+    
+    // Proses Pemampatan Gambar (Image Compression) ke Base64
     const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64Image = reader.result as string;
-      const { error } = await supabase.auth.updateUser({ data: { avatar_url: base64Image } });
-
-      if (!error) {
-        setUserProfile(prev => ({ ...prev, avatarUrl: base64Image }));
-      } else {
-        alert('Gagal memuat naik gambar profil.');
-      }
-      setIsUploadingAvatar(false);
-    };
     reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 300;
+        const MAX_HEIGHT = 300;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        // Compress kepada JPEG kualiti 0.7
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+
+        try {
+          const { error } = await supabase.auth.updateUser({ 
+            data: { avatar_url: compressedBase64 } 
+          });
+
+          if (error) throw error;
+          setUserProfile(prev => ({ ...prev, avatarUrl: compressedBase64 }));
+          alert('Berjaya mengemas kini gambar profil!');
+        } catch (err: any) {
+          alert('Gagal memuat naik gambar profil. Sila cuba gambar lain.');
+        } finally {
+          setIsUploadingAvatar(false);
+        }
+      };
+    };
   };
 
+  // KEMAS KINI 2: FUNGSI SIMPAN BUTIRAN PROFIL
   const handleSaveProfileDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingProfile(true);
 
     try {
-      const { error } = await supabase.auth.updateUser({
+      const updateData: any = {
         data: {
           full_name: editName,
           name: editName,
-          phone_number: editPhone
+          phone_number: editPhone,
+          faculty: editFaculty
         }
-      });
+      };
+
+      if (changePassword && editPassword.length >= 6) {
+        updateData.password = editPassword;
+      } else if (changePassword && editPassword.length < 6) {
+        throw new Error('Kata laluan baharu mesti mengandungi sekurang-kurangnya 6 aksara.');
+      }
+
+      const { error } = await supabase.auth.updateUser(updateData);
 
       if (error) throw error;
 
-      setUserProfile(prev => ({ ...prev, name: editName }));
+      setUserProfile(prev => ({ ...prev, name: editName, faculty: editFaculty }));
       alert('✅ Butiran profil berjaya dikemas kini!');
+      
       setIsProfileModalOpen(false);
+      setChangePassword(false);
+      setEditPassword('');
 
     } catch (err: any) {
       alert(`Ralat: ${err.message || 'Gagal menyimpan butiran profil.'}`);
@@ -232,7 +291,7 @@ export default function DashboardUtama() {
 
   const handleLogout = async () => {
     try { await supabase.auth.signOut(); } catch (error) {}
-    document.cookie = "abqari_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax";
+    document.cookie = "abqari_session=; path=/; max-age=0;";
     router.push('/login');
   };
 
@@ -287,8 +346,8 @@ export default function DashboardUtama() {
     },
 
     modalOverlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' },
-    modalBox: { backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '450px', padding: '25px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)' },
-    input: { width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outlineColor: '#3b0764', backgroundColor: '#f8fafc', boxSizing: 'border-box' as const }
+    modalBox: { backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '480px', padding: '25px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)', maxHeight: '90vh', overflowY: 'auto' as const },
+    input: { width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outlineColor: '#3b0764', backgroundColor: '#f8fafc', boxSizing: 'border-box' as const }
   };
 
   const menuItems = [
@@ -345,7 +404,6 @@ export default function DashboardUtama() {
 
   const activeMenu = menuItems.filter(item => isAdmin || item.showForLecturer);
 
-  // 🛡️ TIRAI KESELAMATAN SEBELUM HALAMAN DIPAPARKAN
   if (!isSessionVerified) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#3b0764', color: 'white', fontFamily: 'sans-serif' }}>
@@ -358,19 +416,16 @@ export default function DashboardUtama() {
   return (
     <div style={styles.page}>
       
-      {/* LATAR BELAKANG UNGU & CORAK ISLAMIK */}
       <div style={styles.banner} />
 
       <div style={styles.container}>
         
-        {/* HEADER / TOP NAV */}
         <div style={styles.headerBox}>
           <div>
             <h1 style={styles.logoText}>ABQARI</h1>
             <p style={styles.subLogo}>ADVANCED BLUEPRINT & QUESTION ASSESSMENT RESOURCE INTEGRATOR</p>
           </div>
           
-          {/* PROFILE & SESSION INFO */}
           <div style={styles.profileBox}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
               
@@ -385,18 +440,10 @@ export default function DashboardUtama() {
               
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                 
-                {/* KOTAK MASA SESI & LAST LOGIN */}
                 <div style={{ 
-                  backgroundColor: 'rgba(0,0,0,0.3)', 
-                  padding: '6px 12px', 
-                  borderRadius: '8px',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  alignItems: 'flex-end',
-                  justifyContent: 'center',
-                  gap: '2px',
-                  height: '100%'
+                  backgroundColor: 'rgba(0,0,0,0.3)', padding: '6px 12px', borderRadius: '8px',
+                  border: '1px solid rgba(255,255,255,0.12)', display: 'flex', flexDirection: 'column', 
+                  alignItems: 'flex-end', justifyContent: 'center', gap: '2px', height: '100%'
                 }}>
                   <div style={{ fontSize: '0.88rem', color: '#ffffff', letterSpacing: '0.5px' }}>
                     🕒 <strong style={{ color: '#fde047', fontFamily: 'monospace', fontSize: '0.95rem' }}>{formatTime(currentTime)}</strong>
@@ -409,29 +456,14 @@ export default function DashboardUtama() {
                   </div>
                 </div>
 
-                {/* KOTAK BUTANG (LOG KELUAR & PROFIL) */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  
-                  {/* BUTANG LOG KELUAR */}
                   <button
                     onClick={handleLogout}
                     style={{
-                      backgroundColor: '#ef4444',
-                      color: 'white',
-                      border: '1px solid #f87171',
-                      padding: '6px 12px',
-                      borderRadius: '6px',
-                      fontSize: '0.78rem',
-                      fontWeight: 'bold',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '5px',
-                      boxShadow: '0 2px 6px rgba(239, 68, 68, 0.25)',
-                      transition: 'all 0.2s',
-                      width: '100%',
-                      boxSizing: 'border-box'
+                      backgroundColor: '#ef4444', color: 'white', border: '1px solid #f87171', padding: '6px 12px',
+                      borderRadius: '6px', fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center', gap: '5px', boxShadow: '0 2px 6px rgba(239, 68, 68, 0.25)',
+                      transition: 'all 0.2s', width: '100%', boxSizing: 'border-box'
                     }}
                     onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
                     onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#ef4444'}
@@ -439,26 +471,13 @@ export default function DashboardUtama() {
                     🚪 Log Keluar
                   </button>
 
-                  {/* BUTANG KEMASKINI PROFIL (MODAL) */}
                   <button 
                     onClick={() => setIsProfileModalOpen(true)}
                     style={{
-                      backgroundColor: '#3b82f6',
-                      color: 'white',
-                      border: '1px solid #60a5fa',
-                      padding: '6px 12px',
-                      borderRadius: '6px',
-                      fontSize: '0.78rem',
-                      fontWeight: 'bold',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '5px',
-                      boxShadow: '0 2px 6px rgba(59, 130, 246, 0.25)',
-                      transition: 'all 0.2s',
-                      width: '100%',
-                      boxSizing: 'border-box'
+                      backgroundColor: '#3b82f6', color: 'white', border: '1px solid #60a5fa', padding: '6px 12px',
+                      borderRadius: '6px', fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center', gap: '5px', boxShadow: '0 2px 6px rgba(59, 130, 246, 0.25)',
+                      transition: 'all 0.2s', width: '100%', boxSizing: 'border-box'
                     }}
                     onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
                     onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
@@ -473,31 +492,15 @@ export default function DashboardUtama() {
             <div 
               onClick={() => document.getElementById('avatar-file-input')?.click()}
               style={{ 
-                width: '60px', 
-                height: '60px', 
-                borderRadius: '50%', 
-                backgroundColor: '#fde047', 
-                color: '#3b0764', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                fontWeight: '900', 
-                fontSize: '1.4rem', 
-                boxShadow: '0 4px 15px rgba(0,0,0,0.3)', 
-                border: '3px solid #ffffff',
-                cursor: 'pointer',
-                overflow: 'hidden',
-                position: 'relative',
-                flexShrink: 0
+                width: '60px', height: '60px', borderRadius: '50%', backgroundColor: '#fde047', color: '#3b0764', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '1.4rem', 
+                boxShadow: '0 4px 15px rgba(0,0,0,0.3)', border: '3px solid #ffffff', cursor: 'pointer', overflow: 'hidden',
+                position: 'relative', flexShrink: 0
               }}
               title="Klik untuk muat naik gambar profil baharu"
             >
               {userProfile.avatarUrl ? (
-                <img 
-                  src={userProfile.avatarUrl} 
-                  alt="Profil" 
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                />
+                <img src={userProfile.avatarUrl} alt="Profil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
                 getInitials(userProfile.name)
               )}
@@ -509,31 +512,24 @@ export default function DashboardUtama() {
               )}
 
               <input 
-                id="avatar-file-input"
-                type="file" 
-                accept="image/*" 
-                onChange={handleAvatarUpload}
-                style={{ display: 'none' }} 
+                id="avatar-file-input" type="file" accept="image/jpeg, image/png, image/jpg" 
+                onChange={handleAvatarUpload} style={{ display: 'none' }} 
               />
             </div>
           </div>
         </div>
 
-        {/* LENCANA KREDIT & BONUS */}
         <div style={{ marginBottom: '15px', display: 'flex', alignItems: 'center' }}>
           <CreditBadge />
         </div>
 
-        {/* SECTION: 4 STATISTIK RINGKAS */}
         <div style={styles.statGrid}>
           <div style={styles.statCard}>
             <div style={{ backgroundColor: 'rgba(255,255,255,0.12)', padding: '10px', borderRadius: '10px' }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fde047" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '900', color: '#fde047' }}>
-                {isLoadingStats ? '...' : stats.subjects}
-              </h3>
+              <h3 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '900', color: '#fde047' }}>{isLoadingStats ? '...' : stats.subjects}</h3>
               <p style={{ margin: 0, fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '600' }}>Kursus Berdaftar</p>
             </div>
           </div>
@@ -543,72 +539,50 @@ export default function DashboardUtama() {
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '900', color: '#38bdf8' }}>
-                {isLoadingStats ? '...' : stats.docs}
-              </h3>
+              <h3 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '900', color: '#38bdf8' }}>{isLoadingStats ? '...' : stats.docs}</h3>
               <p style={{ margin: 0, fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '600' }}>Dokumen Sumber AI</p>
             </div>
           </div>
 
           <div style={styles.statCard}>
             <div style={{ backgroundColor: 'rgba(255,255,255,0.12)', padding: '10px', borderRadius: '10px' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fb7185" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                <line x1="8" y1="21" x2="16" y2="21"></line>
-                <line x1="12" y1="17" x2="12" y2="21"></line>
-              </svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fb7185" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '900', color: '#fb7185' }}>
-                {isLoadingStats ? '...' : stats.archives}
-              </h3>
+              <h3 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '900', color: '#fb7185' }}>{isLoadingStats ? '...' : stats.archives}</h3>
               <p style={{ margin: 0, fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '600' }}>Soalan Dijana (Arkib)</p>
             </div>
           </div>
 
           <div style={styles.statCard}>
             <div style={{ backgroundColor: 'rgba(255,255,255,0.12)', padding: '10px', borderRadius: '10px' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                <circle cx="9" cy="7" r="4"></circle>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-              </svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '900', color: '#4ade80' }}>
-                {isLoadingStats ? '...' : stats.users}
-              </h3>
+              <h3 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '900', color: '#4ade80' }}>{isLoadingStats ? '...' : stats.users}</h3>
               <p style={{ margin: 0, fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '600' }}>Pengguna Berdaftar</p>
             </div>
           </div>
         </div>
 
         <div style={{ marginTop: '40px' }}>
-          <h2 style={{ color: '#0f172a', marginBottom: '20px', fontSize: '1.3rem', fontWeight: 'bold' }}>
-            Pilih Modul Tindakan
-          </h2>
+          <h2 style={{ color: '#0f172a', marginBottom: '20px', fontSize: '1.3rem', fontWeight: 'bold' }}>Pilih Modul Tindakan</h2>
           
           <div style={styles.menuContainer}>
             {activeMenu.map((item) => (
               <div key={item.id} style={styles.cardWrapper}>
                 <Link href={item.link} style={{ textDecoration: 'none', color: 'inherit', display: 'block', height: '100%' }}>
                   <div 
-                    onMouseEnter={() => setHoveredCard(item.id)}
-                    onMouseLeave={() => setHoveredCard(null)}
+                    onMouseEnter={() => setHoveredCard(item.id)} onMouseLeave={() => setHoveredCard(null)}
                     style={{
                       ...styles.card,
                       backgroundColor: hoveredCard === item.id ? '#ffffff' : 'rgba(226, 232, 240, 0.65)',
                       border: hoveredCard === item.id ? '1px solid #cbd5e1' : '1px solid rgba(203, 213, 225, 0.6)',
                       transform: hoveredCard === item.id ? 'translateY(-4px)' : 'translateY(0)',
-                      boxShadow: hoveredCard === item.id 
-                        ? '0 12px 20px -5px rgba(0,0,0,0.08), 0 8px 8px -5px rgba(0,0,0,0.03)' 
-                        : '0 2px 4px rgba(0,0,0,0.02)',
+                      boxShadow: hoveredCard === item.id ? '0 12px 20px -5px rgba(0,0,0,0.08), 0 8px 8px -5px rgba(0,0,0,0.03)' : '0 2px 4px rgba(0,0,0,0.02)',
                     }}
                   >
-                    <div style={{ width: '42px', height: '42px', borderRadius: '8px', backgroundColor: item.bgColor, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2px' }}>
-                      {item.icon}
-                    </div>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '8px', backgroundColor: item.bgColor, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2px' }}>{item.icon}</div>
                     <div>
                       <h3 style={{ margin: '0 0 4px 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: '700' }}>{item.title}</h3>
                       <p style={styles.descriptionText}>{item.desc}</p>
@@ -623,14 +597,13 @@ export default function DashboardUtama() {
           </div>
         </div>
 
-        {/* FOOTER */}
         <div style={{ marginTop: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>
           <p>© {new Date().getFullYear()} ABQARI. Hak Cipta Terpelihara. ACIS, Universiti Teknologi MARA (UiTM).</p>
         </div>
 
       </div>
 
-      {/* MODAL KEMASKINI PROFIL */}
+      {/* KEMAS KINI: MODAL KEMASKINI PROFIL DIPERLUAS */}
       {isProfileModalOpen && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalBox}>
@@ -642,49 +615,52 @@ export default function DashboardUtama() {
             </div>
 
             <form onSubmit={handleSaveProfileDetails}>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: '700', color: '#334155' }}>
-                  Nama Penuh & Gelaran
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: '700', color: '#334155' }}>
+                  Emel Rasmi <span style={{ fontSize: '0.7rem', color: '#ef4444', fontWeight: 'normal' }}>(Tidak boleh diubah)</span>
                 </label>
-                <input 
-                  type="text"
-                  required
-                  style={styles.input}
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  placeholder="Contoh: Dr. Ahmad"
-                />
+                <input type="text" readOnly style={{ ...styles.input, backgroundColor: '#e2e8f0', color: '#64748b', cursor: 'not-allowed' }} value={userProfile.email} />
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: '700', color: '#334155' }}>Nama Penuh & Gelaran</label>
+                <input type="text" required style={styles.input} value={editName} onChange={(e) => setEditName(e.target.value)} />
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: '700', color: '#334155' }}>Fakulti / Jabatan</label>
+                <input type="text" required style={styles.input} value={editFaculty} onChange={(e) => setEditFaculty(e.target.value)} />
               </div>
 
               <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: '700', color: '#334155' }}>
-                  Nombor Telefon / WhatsApp
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: '700', color: '#334155' }}>Nombor Telefon / WhatsApp</label>
+                <input type="tel" required style={styles.input} value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
+              </div>
+
+              {/* BAHAGIAN KEMASKINI KATA LALUAN PENGGUNA */}
+              <div style={{ backgroundColor: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '700', color: '#3b0764', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={changePassword} onChange={(e) => setChangePassword(e.target.checked)} />
+                  Tukar Kata Laluan Baharu?
                 </label>
-                <input 
-                  type="tel"
-                  required
-                  style={styles.input}
-                  value={editPhone}
-                  onChange={(e) => setEditPhone(e.target.value)}
-                  placeholder="Contoh: 0123456789"
-                />
+                
+                {changePassword && (
+                  <div style={{ marginTop: '12px' }}>
+                    <input 
+                      type="password" 
+                      placeholder="Masukkan kata laluan baharu (min 6 aksara)" 
+                      required={changePassword}
+                      style={styles.input} 
+                      value={editPassword} 
+                      onChange={(e) => setEditPassword(e.target.value)} 
+                    />
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '10px' }}>
-                <button 
-                  type="button" 
-                  onClick={() => setIsProfileModalOpen(false)}
-                  style={{ backgroundColor: 'transparent', border: '1px solid #cbd5e1', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', color: '#475569' }}
-                >
-                  Batal
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={isSavingProfile}
-                  style={{ backgroundColor: '#3b82f6', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}
-                >
-                  {isSavingProfile ? '⏳ Menyimpan...' : '💾 Simpan Profil'}
-                </button>
+                <button type="button" onClick={() => setIsProfileModalOpen(false)} style={{ backgroundColor: 'transparent', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', color: '#475569' }}>Batal</button>
+                <button type="submit" disabled={isSavingProfile} style={{ backgroundColor: '#3b82f6', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>{isSavingProfile ? '⏳ Menyimpan...' : '💾 Simpan Profil'}</button>
               </div>
             </form>
           </div>

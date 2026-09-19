@@ -8,24 +8,12 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-const UITM_FACULTIES = [
-  'ACIS - Akademi Pengajian Islam Kontemporari',
-  'FPI - Fakulti Pengajian Islam',
-  'APB - Akademi Pengajian Bahasa',
-  'FSKM - Fakulti Sains Komputer & Matematik',
-  'FPP - Fakulti Pengurusan & Perniagaan',
-  'FSPPP - Fakulti Sains Pentadbiran & Pengajian Polisi',
-  'FPM - Fakulti Pengurusan Maklumat',
-  'FKA - Fakulti Kejuruteraan Awam',
-  'FKE - Fakulti Kejuruteraan Elektrik',
-  'FKM - Fakulti Kejuruteraan Mekanikal',
-  'Lain-lain / Jabatan Khusus'
-];
-
 export default function RegisterPage() {
   const [regFullName, setRegFullName] = useState('');
+  
+  // State untuk Fakulti kini digunakan sebagai input teks bebas
   const [regFaculty, setRegFaculty] = useState('');
-  const [customFaculty, setCustomFaculty] = useState('');
+  
   const [regPhone, setRegPhone] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
@@ -41,6 +29,13 @@ export default function RegisterPage() {
     setErrorMessage(null);
     setRegisterSuccessMessage(null);
 
+    // Semakan Keselamatan Tambahan
+    if (!regFaculty.trim()) {
+      setErrorMessage('Sila masukkan Fakulti / Jabatan anda.');
+      setIsLoading(false);
+      return;
+    }
+
     if (regPassword !== regConfirmPassword) {
       setErrorMessage('Kata laluan dan pengesahan kata laluan tidak sepadan.');
       setIsLoading(false);
@@ -53,10 +48,6 @@ export default function RegisterPage() {
       return;
     }
 
-    const finalFaculty = regFaculty === 'Lain-lain / Jabatan Khusus' && customFaculty.trim() 
-      ? customFaculty.trim() 
-      : regFaculty;
-
     try {
       const { data, error } = await supabase.auth.signUp({
         email: regEmail,
@@ -65,7 +56,7 @@ export default function RegisterPage() {
           data: {
             full_name: regFullName,
             name: regFullName,
-            faculty: finalFaculty,
+            faculty: regFaculty.trim(), // Masukkan teks fakulti yang ditaip
             phone_number: regPhone,
             role: 'lecturer',
             is_approved: false, // Perlu diluluskan Admin
@@ -82,10 +73,9 @@ export default function RegisterPage() {
         '✅ Pendaftaran anda telah berjaya diterima!\n\nDemi menjaga kerahsiaan soalan peperiksaan, akaun anda perlu disemak dan diluluskan oleh Pentadbir (Admin) ABQARI terlebih dahulu.\n\nSila tunggu makluman rasmi yang akan dihantar melalui Emel atau WhatsApp anda.'
       );
 
-      // Kosongkan form selepas berjaya
+      // Kosongkan semula borang
       setRegFullName('');
       setRegFaculty('');
-      setCustomFaculty('');
       setRegPhone('');
       setRegEmail('');
       setRegPassword('');
@@ -146,18 +136,7 @@ export default function RegisterPage() {
       fontSize: '0.95rem',
       outlineColor: '#3b0764',
       backgroundColor: '#f8fafc',
-      boxSizing: 'border-box' as const // KEMAS KINI TYPOGRAPHY DI SINI
-    },
-    select: {
-      width: '100%',
-      padding: '12px 15px',
-      borderRadius: '10px',
-      border: '1px solid #cbd5e1',
-      fontSize: '0.95rem',
-      outlineColor: '#3b0764',
-      backgroundColor: '#f8fafc',
-      boxSizing: 'border-box' as const, // KEMAS KINI TYPOGRAPHY DI SINI
-      cursor: 'pointer'
+      boxSizing: 'border-box' as const 
     },
     submitBtn: {
       width: '100%',
@@ -245,34 +224,18 @@ export default function RegisterPage() {
                 />
               </div>
 
+              {/* MEDAN FAKULTI / JABATAN DITUKAR KEPADA INPUT TEKS */}
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Fakulti / Jabatan <span style={{ color: '#ef4444' }}>*</span></label>
-                <select
+                <input
+                  type="text"
                   required
-                  style={styles.select}
+                  placeholder="Contoh: Akademi Pengajian Islam Kontemporari (ACIS)"
+                  style={styles.input}
                   value={regFaculty}
                   onChange={(e) => setRegFaculty(e.target.value)}
-                >
-                  <option value="" disabled>-- Sila Pilih Fakulti / Jabatan --</option>
-                  {UITM_FACULTIES.map((fac) => (
-                    <option key={fac} value={fac}>{fac}</option>
-                  ))}
-                </select>
+                />
               </div>
-
-              {regFaculty === 'Lain-lain / Jabatan Khusus' && (
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Nyatakan Nama Fakulti / Jabatan <span style={{ color: '#ef4444' }}>*</span></label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Contoh: Jabatan Pengajian Muamalat"
-                    style={styles.input}
-                    value={customFaculty}
-                    onChange={(e) => setCustomFaculty(e.target.value)}
-                  />
-                </div>
-              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
                 <div style={styles.inputGroup}>
