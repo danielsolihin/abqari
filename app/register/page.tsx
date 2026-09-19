@@ -104,7 +104,7 @@ export default function RegisterPage() {
       backgroundColor: '#f8fafc',
       fontFamily: '"Inter", "Segoe UI", sans-serif',
       display: 'flex',
-      flexDirection: 'column' as 'column',
+      flexDirection: 'column' as const,
       alignItems: 'center',
       justifyContent: 'center',
       padding: '40px 20px'
@@ -122,7 +122,7 @@ export default function RegisterPage() {
       background: 'linear-gradient(135deg, #3b0764, #4a154b)',
       padding: '30px 25px',
       color: 'white',
-      textAlign: 'center' as 'center',
+      textAlign: 'center' as const,
       borderBottom: '4px solid #fde047'
     },
     formBody: {
@@ -146,7 +146,7 @@ export default function RegisterPage() {
       fontSize: '0.95rem',
       outlineColor: '#3b0764',
       backgroundColor: '#f8fafc',
-      boxSizing: 'border-box' as 'boxSizing'
+      boxSizing: 'border-box' as const // KEMAS KINI TYPOGRAPHY DI SINI
     },
     select: {
       width: '100%',
@@ -156,12 +156,12 @@ export default function RegisterPage() {
       fontSize: '0.95rem',
       outlineColor: '#3b0764',
       backgroundColor: '#f8fafc',
-      boxSizing: 'border-box' as 'boxSizing',
+      boxSizing: 'border-box' as const, // KEMAS KINI TYPOGRAPHY DI SINI
       cursor: 'pointer'
     },
     submitBtn: {
       width: '100%',
-      backgroundColor: '#10b981', // Warna hijau success
+      backgroundColor: '#10b981',
       color: '#ffffff',
       padding: '14px',
       borderRadius: '10px',
@@ -193,8 +193,8 @@ export default function RegisterPage() {
       fontSize: '0.9rem',
       lineHeight: '1.6',
       marginBottom: '20px',
-      whiteSpace: 'pre-line' as 'whiteSpace',
-      textAlign: 'center' as 'center'
+      whiteSpace: 'pre-line' as const,
+      textAlign: 'center' as const
     }
   };
 
