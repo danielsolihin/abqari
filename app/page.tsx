@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 
 // IMPORT KOMPONEN LENCANA KREDIT
@@ -13,6 +14,7 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function DashboardUtama() {
+  const router = useRouter();
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [loginTime, setLoginTime] = useState<Date | null>(null);
@@ -32,17 +34,28 @@ export default function DashboardUtama() {
   
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
+  // State Modal Kemaskini Butiran Profil
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
   // State Statistik Dinamik Supabase
   const [stats, setStats] = useState({ subjects: 0, docs: 0, archives: 0, users: 0 });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-  // 1 & 2. Pengambilan Profil, Last Login & Penapisan Statistik Mengikut Peranan (Role)
+  // 1 & 2. Pengambilan Profil, Penyekatan Akses (Route Guard) & Penapisan Statistik
   useEffect(() => {
     const initializeDashboard = async () => {
       setIsLoadingStats(true);
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        const { data: { user }, error } = await supabase.auth.getUser();
+        
+        // PENYELESAIAN ISU 1: Tendang ke halaman login jika tiada sesi sah
+        if (error || !user) {
+          router.push('/login');
+          return;
+        }
 
         // Ambil Last Login sebenar daripada Supabase Auth
         if (user.last_sign_in_at) {
@@ -58,13 +71,16 @@ export default function DashboardUtama() {
         const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
         setIsAdmin(isAdminUser);
 
-        // Tetapkan Profil
+        // Tetapkan Profil ke UI & Form Modal
         const meta = user.user_metadata || {};
         setUserProfile({
           name: meta.full_name || meta.name || user.email?.split('@')[0] || 'Pensyarah',
           faculty: meta.faculty || 'Fakulti Pengajian Islam (FPI)',
           avatarUrl: meta.avatar_url || null,
         });
+        
+        setEditName(meta.full_name || meta.name || '');
+        setEditPhone(meta.phone_number || '');
 
         // Kuiri Statistik Asas
         let subQ = supabase.from('subjects').select('*', { count: 'exact', head: true });
@@ -127,7 +143,7 @@ export default function DashboardUtama() {
     };
 
     initializeDashboard();
-  }, []);
+  }, [router]);
 
   // 3. Jam Sesi Real-Time
   useEffect(() => {
@@ -142,6 +158,7 @@ export default function DashboardUtama() {
     return () => clearInterval(timer);
   }, []);
 
+  // FUNGSI KEMASKINI GAMBAR PROFIL
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -167,6 +184,33 @@ export default function DashboardUtama() {
     reader.readAsDataURL(file);
   };
 
+  // PENYELESAIAN ISU 2: FUNGSI KEMASKINI BUTIRAN (NAMA & TELEFON)
+  const handleSaveProfileDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingProfile(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          full_name: editName,
+          name: editName,
+          phone_number: editPhone
+        }
+      });
+
+      if (error) throw error;
+
+      setUserProfile(prev => ({ ...prev, name: editName }));
+      alert('✅ Butiran profil berjaya dikemas kini!');
+      setIsProfileModalOpen(false);
+
+    } catch (err: any) {
+      alert(`Ralat: ${err.message || 'Gagal menyimpan butiran profil.'}`);
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   const getInitials = (name: string) => {
     if (!name || name === 'Memuatkan...') return 'AB';
     const cleanName = name.replace(/(Prof\.|Dr\.|Ir\.|Hj\.|Hjh\.|Dato'|Datin)/gi, '').trim();
@@ -185,13 +229,13 @@ export default function DashboardUtama() {
   const handleLogout = async () => {
     try { await supabase.auth.signOut(); } catch (error) {}
     document.cookie = "abqari_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax";
-    window.location.href = '/login';
+    router.push('/login');
   };
 
   const styles = {
-    page: { backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '"Inter", "Segoe UI", sans-serif', position: 'relative' as 'relative' },
+    page: { backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '"Inter", "Segoe UI", sans-serif', position: 'relative' as const },
     banner: {
-      position: 'absolute' as 'absolute', top: 0, left: 0, right: 0, 
+      position: 'absolute' as const, top: 0, left: 0, right: 0, 
       minHeight: '320px',
       background: 'linear-gradient(135deg, #3b0764, #4a154b)',
       backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cg stroke='%23ffffff' stroke-width='1.5' fill='none' stroke-opacity='0.07'%3E%3Cg transform='translate(30,30)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3Cg transform='translate(0,0)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3Cg transform='translate(60,0)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3Cg transform='translate(0,60)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3Cg transform='translate(60,60)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3C/g%3E%3C/svg%3E"), linear-gradient(135deg, #3b0764, #4a154b)`,
@@ -199,13 +243,13 @@ export default function DashboardUtama() {
       zIndex: 0,
       borderBottom: '4px solid #fde047'
     },
-    container: { maxWidth: '1200px', margin: '0 auto', padding: '35px 20px', position: 'relative' as 'relative', zIndex: 1 },
+    container: { maxWidth: '1200px', margin: '0 auto', padding: '35px 20px', position: 'relative' as const, zIndex: 1 },
     headerBox: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '30px', paddingTop: '5px' },
     
     logoText: { color: '#fde047', fontSize: '2.4rem', fontWeight: '900', margin: 0, textShadow: '0 2px 10px rgba(0,0,0,0.3)', letterSpacing: '-1px' },
     subLogo: { color: '#e2e8f0', fontSize: '0.7rem', fontWeight: '400', letterSpacing: '0.5px', margin: '4px 0 0 0', maxWidth: '350px', lineHeight: '1.4', opacity: '0.9' },
     
-    profileBox: { display: 'flex', alignItems: 'flex-start', gap: '15px', color: 'white', textAlign: 'right' as 'right' },
+    profileBox: { display: 'flex', alignItems: 'flex-start', gap: '15px', color: 'white', textAlign: 'right' as const },
     statGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '35px' },
     
     statCard: { 
@@ -221,7 +265,7 @@ export default function DashboardUtama() {
       boxShadow: '0 10px 20px rgba(0,0,0,0.18)'
     },
     
-    menuContainer: { display: 'flex', flexWrap: 'wrap' as 'wrap', gap: '16px', justifyContent: 'center' },
+    menuContainer: { display: 'flex', flexWrap: 'wrap' as const, gap: '16px', justifyContent: 'center' },
     cardWrapper: { flex: '1 1 240px', maxWidth: '280px' },
     card: { 
       height: '100%', 
@@ -229,14 +273,18 @@ export default function DashboardUtama() {
       padding: '18px', 
       cursor: 'pointer', 
       display: 'flex', 
-      flexDirection: 'column' as 'column', 
+      flexDirection: 'column' as const, 
       gap: '10px', 
       transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' 
     },
     descriptionText: {
       margin: 0, color: '#64748b', fontSize: '0.82rem', lineHeight: '1.5',
       display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'orient' as any, overflow: 'hidden', textOverflow: 'ellipsis'
-    }
+    },
+
+    modalOverlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' },
+    modalBox: { backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '450px', padding: '25px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)' },
+    input: { width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outlineColor: '#3b0764', backgroundColor: '#f8fafc', boxSizing: 'border-box' as const }
   };
 
   const menuItems = [
@@ -334,7 +382,7 @@ export default function DashboardUtama() {
                   alignItems: 'flex-end',
                   justifyContent: 'center',
                   gap: '2px',
-                  height: '100%' // Ensure consistent height
+                  height: '100%'
                 }}>
                   <div style={{ fontSize: '0.88rem', color: '#ffffff', letterSpacing: '0.5px' }}>
                     🕒 <strong style={{ color: '#fde047', fontFamily: 'monospace', fontSize: '0.95rem' }}>{formatTime(currentTime)}</strong>
@@ -349,6 +397,7 @@ export default function DashboardUtama() {
 
                 {/* KOTAK BUTANG (LOG KELUAR & PROFIL) */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  
                   {/* BUTANG LOG KELUAR */}
                   <button
                     onClick={handleLogout}
@@ -376,9 +425,9 @@ export default function DashboardUtama() {
                     🚪 Log Keluar
                   </button>
 
-                  {/* BUTANG PROFIL */}
-                  <Link 
-                    href="/profil"
+                  {/* BUTANG KEMASKINI PROFIL (MODAL) */}
+                  <button 
+                    onClick={() => setIsProfileModalOpen(true)}
                     style={{
                       backgroundColor: '#3b82f6',
                       color: 'white',
@@ -394,7 +443,6 @@ export default function DashboardUtama() {
                       gap: '5px',
                       boxShadow: '0 2px 6px rgba(59, 130, 246, 0.25)',
                       transition: 'all 0.2s',
-                      textDecoration: 'none',
                       width: '100%',
                       boxSizing: 'border-box'
                     }}
@@ -402,7 +450,7 @@ export default function DashboardUtama() {
                     onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
                   >
                     👤 Kemaskini Profil
-                  </Link>
+                  </button>
                 </div>
               </div>
 
@@ -567,6 +615,68 @@ export default function DashboardUtama() {
         </div>
 
       </div>
+
+      {/* MODAL KEMASKINI PROFIL */}
+      {isProfileModalOpen && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalBox}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.2rem', fontWeight: '800' }}>
+                👤 Kemaskini Butiran Profil
+              </h3>
+              <button onClick={() => setIsProfileModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleSaveProfileDetails}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: '700', color: '#334155' }}>
+                  Nama Penuh & Gelaran
+                </label>
+                <input 
+                  type="text"
+                  required
+                  style={styles.input}
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="Contoh: Dr. Ahmad"
+                />
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: '700', color: '#334155' }}>
+                  Nombor Telefon / WhatsApp
+                </label>
+                <input 
+                  type="tel"
+                  required
+                  style={styles.input}
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  placeholder="Contoh: 0123456789"
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '10px' }}>
+                <button 
+                  type="button" 
+                  onClick={() => setIsProfileModalOpen(false)}
+                  style={{ backgroundColor: 'transparent', border: '1px solid #cbd5e1', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', color: '#475569' }}
+                >
+                  Batal
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSavingProfile}
+                  style={{ backgroundColor: '#3b82f6', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  {isSavingProfile ? '⏳ Menyimpan...' : '💾 Simpan Profil'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
