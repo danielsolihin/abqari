@@ -35,7 +35,6 @@ export default function DashboardUtama() {
   
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
-  // KEMAS KINI: State Modal Kemaskini Butiran Profil yang diperluas
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
@@ -173,7 +172,6 @@ export default function DashboardUtama() {
     return () => clearInterval(timer);
   }, []);
 
-  // KEMAS KINI 1: FUNGSI PEMAMPATAN & MUAT NAIK GAMBAR PROFIL
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -185,7 +183,6 @@ export default function DashboardUtama() {
 
     setIsUploadingAvatar(true);
     
-    // Proses Pemampatan Gambar (Image Compression) ke Base64
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = (event) => {
@@ -215,7 +212,6 @@ export default function DashboardUtama() {
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
 
-        // Compress kepada JPEG kualiti 0.7
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
 
         try {
@@ -235,7 +231,6 @@ export default function DashboardUtama() {
     };
   };
 
-  // KEMAS KINI 2: FUNGSI SIMPAN BUTIRAN PROFIL
   const handleSaveProfileDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingProfile(true);
@@ -420,8 +415,42 @@ export default function DashboardUtama() {
 
       <div style={styles.container}>
         
+        {/* HEADER / TOP NAV */}
         <div style={styles.headerBox}>
-          <div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+            <button
+              onClick={handleLogout}
+              style={{
+                background: 'transparent',
+                color: '#cbd5e1',
+                border: '1px solid rgba(203, 213, 225, 0.3)',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                fontSize: '0.72rem',
+                fontWeight: 'normal',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                marginBottom: '8px',
+                transition: 'all 0.2s',
+                opacity: 0.85
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.color = '#fca5a5';
+                e.currentTarget.style.borderColor = '#f87171';
+                e.currentTarget.style.opacity = '1';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.color = '#cbd5e1';
+                e.currentTarget.style.borderColor = 'rgba(203, 213, 225, 0.3)';
+                e.currentTarget.style.opacity = '0.85';
+              }}
+            >
+              🚪 Log Keluar
+            </button>
+
             <h1 style={styles.logoText}>ABQARI</h1>
             <p style={styles.subLogo}>ADVANCED BLUEPRINT & QUESTION ASSESSMENT RESOURCE INTEGRATOR</p>
           </div>
@@ -438,8 +467,9 @@ export default function DashboardUtama() {
                 </p>
               </div>
               
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'stretch', gap: '10px' }}>
                 
+                {/* KOTAK MASA SESI */}
                 <div style={{ 
                   backgroundColor: 'rgba(0,0,0,0.3)', padding: '6px 12px', borderRadius: '8px',
                   border: '1px solid rgba(255,255,255,0.12)', display: 'flex', flexDirection: 'column', 
@@ -456,31 +486,37 @@ export default function DashboardUtama() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <button
-                    onClick={handleLogout}
-                    style={{
-                      backgroundColor: '#ef4444', color: 'white', border: '1px solid #f87171', padding: '6px 12px',
-                      borderRadius: '6px', fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center', gap: '5px', boxShadow: '0 2px 6px rgba(239, 68, 68, 0.25)',
-                      transition: 'all 0.2s', width: '100%', boxSizing: 'border-box'
-                    }}
-                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
-                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#ef4444'}
-                  >
-                    🚪 Log Keluar
-                  </button>
-
+                {/* KEMAS KINI: BUTANG KEMASKINI PROFIL (Warna Serasi Kotak Masa & Teks Biru Lembut) */}
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   <button 
                     onClick={() => setIsProfileModalOpen(true)}
                     style={{
-                      backgroundColor: '#3b82f6', color: 'white', border: '1px solid #60a5fa', padding: '6px 12px',
-                      borderRadius: '6px', fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center', gap: '5px', boxShadow: '0 2px 6px rgba(59, 130, 246, 0.25)',
-                      transition: 'all 0.2s', width: '100%', boxSizing: 'border-box'
+                      backgroundColor: 'rgba(0,0,0,0.3)', 
+                      color: '#93c5fd', // Warna teks Biru Lembut
+                      border: '1px solid rgba(255, 255, 255, 0.12)', 
+                      padding: '8px 14px',
+                      borderRadius: '8px', 
+                      fontSize: '0.78rem', 
+                      fontWeight: 'bold', 
+                      cursor: 'pointer', 
+                      display: 'flex',
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      gap: '5px', 
+                      boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                      backdropFilter: 'blur(5px)',
+                      transition: 'all 0.2s', 
+                      height: '100%', 
+                      boxSizing: 'border-box'
                     }}
-                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
-                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.5)';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.3)';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                    }}
                   >
                     👤 Kemaskini Profil
                   </button>
@@ -554,15 +590,18 @@ export default function DashboardUtama() {
             </div>
           </div>
 
-          <div style={styles.statCard}>
-            <div style={{ backgroundColor: 'rgba(255,255,255,0.12)', padding: '10px', borderRadius: '10px' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          {/* KEMAS KINI: KOTAK PENGGUNA BERDAFTAR HANYA MUNCUL JIKA ADMIN */}
+          {isAdmin && (
+            <div style={styles.statCard}>
+              <div style={{ backgroundColor: 'rgba(255,255,255,0.12)', padding: '10px', borderRadius: '10px' }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '900', color: '#4ade80' }}>{isLoadingStats ? '...' : stats.users}</h3>
+                <p style={{ margin: 0, fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '600' }}>Pengguna Berdaftar</p>
+              </div>
             </div>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '900', color: '#4ade80' }}>{isLoadingStats ? '...' : stats.users}</h3>
-              <p style={{ margin: 0, fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '600' }}>Pengguna Berdaftar</p>
-            </div>
-          </div>
+          )}
         </div>
 
         <div style={{ marginTop: '40px' }}>
@@ -603,7 +642,6 @@ export default function DashboardUtama() {
 
       </div>
 
-      {/* KEMAS KINI: MODAL KEMASKINI PROFIL DIPERLUAS */}
       {isProfileModalOpen && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalBox}>
@@ -637,7 +675,6 @@ export default function DashboardUtama() {
                 <input type="tel" required style={styles.input} value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
               </div>
 
-              {/* BAHAGIAN KEMASKINI KATA LALUAN PENGGUNA */}
               <div style={{ backgroundColor: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '700', color: '#3b0764', cursor: 'pointer' }}>
                   <input type="checkbox" checked={changePassword} onChange={(e) => setChangePassword(e.target.checked)} />
@@ -647,12 +684,8 @@ export default function DashboardUtama() {
                 {changePassword && (
                   <div style={{ marginTop: '12px' }}>
                     <input 
-                      type="password" 
-                      placeholder="Masukkan kata laluan baharu (min 6 aksara)" 
-                      required={changePassword}
-                      style={styles.input} 
-                      value={editPassword} 
-                      onChange={(e) => setEditPassword(e.target.value)} 
+                      type="password" placeholder="Masukkan kata laluan baharu (min 6 aksara)" required={changePassword}
+                      style={styles.input} value={editPassword} onChange={(e) => setEditPassword(e.target.value)} 
                     />
                   </div>
                 )}

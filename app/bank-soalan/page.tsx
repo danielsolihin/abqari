@@ -33,7 +33,7 @@ export default function BankSoalanPage() {
   // State Toggle Tunjuk Jawapan (per question ID)
   const [expandedAnswers, setExpandedAnswers] = useState<{ [key: string]: boolean }>({});
 
-  // 1. Fetch Subjek (Dwi-Lapisan: API Backend + Supabase Fallback)
+  // 1. Fetch Subjek (Ditapis Mengikut Pengguna)
   const fetchSubjects = async () => {
     try {
       const { createClient } = await import('@supabase/supabase-js');
@@ -41,63 +41,71 @@ export default function BankSoalanPage() {
       const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
       const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-      const { data: { session } } = await supabase.auth.getSession();
-      const headers: Record<string, string> = {
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
-      };
-      
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
+      const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
+
+      let query = supabase.from('subjects').select('*').order('name', { ascending: true });
+
+      // JIKA BUKAN ADMIN: Hanya tarik subjek milik pensyarah tersebut
+      if (!isAdminUser) {
+        query = query.eq('user_id', user.id);
       }
 
-      const timeStamp = new Date().getTime();
-      const res = await fetch(`/api/subjects?t=${timeStamp}`, { headers });
-      
-      let list: any[] = [];
-      if (res.ok) {
-        const json = await res.json();
-        if (Array.isArray(json)) list = json;
-        else if (json.success && Array.isArray(json.data)) list = json.data;
-        else if (Array.isArray(json.data)) list = json.data;
+      const { data: directSubjects } = await query;
+        
+      if (directSubjects && directSubjects.length > 0) {
+        setSubjects(directSubjects);
+      } else {
+        setSubjects([]);
       }
-
-      if (list.length === 0) {
-        const { data: directSubjects } = await supabase
-          .from('subjects')
-          .select('*')
-          .order('name', { ascending: true });
-          
-        if (directSubjects && directSubjects.length > 0) {
-          list = directSubjects;
-        }
-      }
-
-      setSubjects(list);
     } catch (err) {
       console.error('Ralat mengambil subjek:', err);
     }
   };
 
+  // 2. Fetch Soalan (Ditapis Mengikut Pengguna & Subjek)
   const fetchQuestions = async () => {
     setIsLoading(true);
     try {
-      const timeStamp = new Date().getTime();
-      let url = `/api/questions?t=${timeStamp}`;
-      if (selectedSubjectFilter) {
-        url += `&subject_id=${selectedSubjectFilter}`;
-      }
-      const res = await fetch(url, { cache: 'no-store' });
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+      const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error(`Ralat API Questions (${res.status}):`, errorText);
-        setQuestions([]);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setIsLoading(false);
         return;
       }
 
-      const json = await res.json();
-      if (json.success) setQuestions(json.data || []);
+      const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
+      const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
+
+      // Query pangkalan data Supabase secara terus
+      let query = supabase.from('questions').select('*, subjects(name, course_code)');
+
+      // JIKA BUKAN ADMIN: Hanya tarik soalan milik pensyarah tersebut
+      if (!isAdminUser) {
+        query = query.eq('user_id', user.id);
+      }
+
+      // Jika ada penapis subjek yang dipilih
+      if (selectedSubjectFilter) {
+        query = query.eq('subject_id', selectedSubjectFilter);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
+
+      if (error) {
+         console.error('Ralat API Questions:', error);
+         setQuestions([]);
+      } else {
+         setQuestions(data || []);
+      }
+      
     } catch (err) {
       console.error('Ralat mengambil soalan:', err);
     } finally {
@@ -113,7 +121,7 @@ export default function BankSoalanPage() {
     fetchQuestions();
   }, [selectedSubjectFilter]);
 
-  // 2. Simpan Soalan Baharu
+  // 3. Simpan Soalan Baharu
   const handleCreateQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formSubjectId) return alert('Sila pilih subjek.');
@@ -162,7 +170,7 @@ export default function BankSoalanPage() {
     }
   };
 
-  // 3. Padam Soalan
+  // 4. Padam Soalan
   const handleDeleteQuestion = async (id: string) => {
     if (!confirm('Adakah anda pasti mahu memadam soalan ini dari Bank Soalan?')) return;
 
@@ -213,21 +221,20 @@ export default function BankSoalanPage() {
   const styles = {
     page: { backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '"Inter", "Segoe UI", sans-serif', paddingBottom: '60px' },
     banner: {
-      height: '250px', // DINAIRKAN KETINGGIAN SUPAYA TEKS TIDAK DILINDUNGI KOTAK BAWAH
+      height: '250px',
       background: 'linear-gradient(135deg, #1e1b4b, #312e81)',
       color: 'white',
       padding: '30px 20px',
       boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
       borderBottom: '4px solid #fde047'
     },
-    // MARGIN ATAS KOTAK DIKURANGKAN (-40px instead of -80px)
     container: { maxWidth: '1200px', margin: '-40px auto 0 auto', padding: '0 20px', position: 'relative' as 'relative', zIndex: 10 },
     topBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
     backBtn: { display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#f8fafc', backgroundColor: 'rgba(255,255,255,0.15)', padding: '8px 16px', borderRadius: '8px', textDecoration: 'none', fontWeight: '700', fontSize: '0.85rem' },
     
     card: { backgroundColor: 'white', borderRadius: '14px', padding: '25px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)', marginBottom: '25px' },
     
-    input: { padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outlineColor: '#312e81', width: '100%', backgroundColor: '#fff', cursor: 'pointer' },
+    input: { padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outlineColor: '#312e81', width: '100%', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box' as const },
     btnPrimary: { backgroundColor: '#312e81', color: 'white', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', border: 'none', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(49,46,129,0.2)' },
     btnSuccess: { backgroundColor: '#10b981', color: 'white', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', border: 'none', cursor: 'pointer' },
     

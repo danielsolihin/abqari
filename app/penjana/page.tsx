@@ -748,8 +748,8 @@ export default function PenjanaSoalanPage() {
                 <div>
                   <label style={{...styles.label, color: '#2563eb'}}>Enjin AI Penjana</label>
                   <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} style={{...styles.input, borderColor: '#bfdbfe', backgroundColor: '#eff6ff'}}>
-                    <option value="gpt-4o-mini">OpenAI GPT-4o Mini (Patuh Format)</option>
-                    <option value="gpt-4o">OpenAI GPT-4o (Kreativiti Tinggi)</option>
+                    <option value="gpt-4o-mini">Standard (Patuh Format)</option>
+                    <option value="gpt-4o">Premium (Kreativiti Tinggi)</option>
                   </select>
                 </div>
                 <div>
