@@ -3,7 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import { pipeline } from '@xenova/transformers';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300; // Penting untuk Local AI
+// Disesuaikan kepada 60 saat mengikut had maksimum Vercel Hobby Tier bagi mengelakkan ralat 504 / JSON Parse
+export const maxDuration = 60; 
 
 // ============================================================
 // SINGLETON LOCAL EMBEDDING (Xenova/bge-base-en-v1.5)

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { pipeline } from "@xenova/transformers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,23 +9,33 @@ const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-class PipelineSingleton {
-  static task = "feature-extraction" as const;
-  static model = "Xenova/bge-base-en-v1.5";
-  static instance: any = null;
+// ============================================================
+// GANTI LOCAL EMBEDDING KEPADA OPENAI EMBEDDING (LEBIH PANTAS & STABIL DI VERCEL)
+// ============================================================
+async function getEmbedding(text: string): Promise<number[]> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY tidak dijumpai untuk fungsi embedding.");
 
-  static async getInstance() {
-    if (this.instance === null) {
-      this.instance = await pipeline(this.task, this.model);
-    }
-    return this.instance;
+  const response = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "text-embedding-3-small", // Model terbaharu, murah dan pantas
+      input: text,
+      dimensions: 768, // Paksa saiz 768 supaya sepadan dengan database Supabase asal (Xenova)
+    }),
+  });
+
+  if (!response.ok) {
+    const errData = await response.json();
+    throw new Error(errData.error?.message || "Gagal menjana embedding dari OpenAI");
   }
-}
 
-async function getLocalEmbedding(text: string): Promise<number[]> {
-  const extractor = await PipelineSingleton.getInstance();
-  const output = await extractor(text, { pooling: "mean", normalize: true });
-  return Array.from(output.data);
+  const data = await response.json();
+  return data.data[0].embedding;
 }
 
 // ============================================================
@@ -207,7 +216,7 @@ ${fullQuestions}`;
       const activeTopics = (topicDistribution || []).filter((t: any) => t.name && t.name.trim() !== "");
       if (activeTopics.length > 0) {
         for (const t of activeTopics) {
-          const queryEmbedding = await getLocalEmbedding(t.name.trim());
+          const queryEmbedding = await getEmbedding(t.name.trim());
           const { data: matched } = await supabase.rpc("match_document_chunks", { query_embedding: queryEmbedding, match_threshold: 0.01, match_count: 5, filter_subject_id: targetSubjectId });
           if (matched) matched.forEach((c: any) => { if (c.content && !chunksFound.includes(c.content)) chunksFound.push(c.content); });
         }
