@@ -28,12 +28,10 @@ export async function GET(req: Request) {
     const supabase = createClient(supabaseUrl, supabaseKey);
     const userId = await getUserIdFromReq(req, supabase);
 
-    // KUNCI KESELAMATAN: Jika tiada maklumat user, pulangkan array kosong
     if (!userId) {
       return NextResponse.json({ success: true, data: [] });
     }
 
-    // TAPISAN BERLAKU DI SINI: Hanya subjek kepunyaan 'userId' akan dipanggil
     const { data, error } = await supabase
       .from("subjects")
       .select("*")
@@ -63,16 +61,21 @@ export async function POST(req: Request) {
     const authUserId = await getUserIdFromReq(req, supabase);
 
     const body = await req.json().catch(() => ({}));
-    const { name, course_code, co, lo, user_id: bodyUserId } = body;
+    
+    // Perbaikan: Ambil kedua format variabel (course_code dan courseCode)
+    const { name, course_code, courseCode, co, lo, user_id: bodyUserId } = body;
 
     let finalUserId = authUserId;
     if (!finalUserId && bodyUserId && isValidUUID(bodyUserId)) {
       finalUserId = bodyUserId;
     }
 
+    // Perbaikan: Gunakan nilai sebenarnya yang dikirimkan oleh UI
+    const actualCourseCode = course_code || courseCode || "";
+
     const payload: any = {
       name: name || "Subjek Baharu",
-      course_code: course_code || "KOD123",
+      course_code: actualCourseCode,
       co: Array.isArray(co) ? co : [],
       lo: Array.isArray(lo) ? lo : [],
       user_id: finalUserId,
@@ -105,18 +108,19 @@ export async function PUT(req: Request) {
     const authUserId = await getUserIdFromReq(req, supabase);
 
     const body = await req.json().catch(() => ({}));
-    const { id, name, courseCode, co, lo } = body;
+    
+    // Perbaikan: Ambil kedua format di PUT juga untuk berjaga-jaga
+    const { id, name, course_code, courseCode, co, lo } = body;
 
     if (!id) throw new Error("ID subjek diperlukan.");
 
     const payload = {
       name,
-      course_code: courseCode,
+      course_code: course_code || courseCode, 
       co: Array.isArray(co) ? co : [],
       lo: Array.isArray(lo) ? lo : [],
     };
 
-    // KUNCI KESELAMATAN: Pastikan hanya boleh edit subjek milik sendiri
     let query = supabase.from("subjects").update(payload).eq("id", id);
     if (authUserId) query = query.eq("user_id", authUserId);
 
@@ -142,7 +146,6 @@ export async function DELETE(req: Request) {
 
     if (!id) throw new Error("ID subjek diperlukan.");
 
-    // KUNCI KESELAMATAN: Pastikan hanya boleh padam subjek milik sendiri
     let query = supabase.from("subjects").delete().eq("id", id);
     if (authUserId) query = query.eq("user_id", authUserId);
 
