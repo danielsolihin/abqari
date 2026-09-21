@@ -1,17 +1,40 @@
-import "pdf-parse/worker"; 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenAI } from '@google/genai';
+import PDFParser from "pdf2json";
+import { pipeline } from "@xenova/transformers";
 
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic'; 
+export const maxDuration = 300; // Penting untuk AI Tempatan
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY });
+// ============================================================
+// SINGLETON LOCAL EMBEDDING (Xenova/bge-base-en-v1.5)
+// ============================================================
+class PipelineSingleton {
+  static task = "feature-extraction" as const;
+  static model = "Xenova/bge-base-en-v1.5"; // 768 Dimensi
+  static instance: any = null;
 
+  static async getInstance() {
+    if (this.instance === null) {
+      this.instance = await pipeline(this.task, this.model);
+    }
+    return this.instance;
+  }
+}
+
+async function getLocalEmbedding(text: string): Promise<number[]> {
+  const extractor = await PipelineSingleton.getInstance();
+  const output = await extractor(text, { pooling: "mean", normalize: true });
+  return Array.from(output.data);
+}
+
+// ============================================================
+// CHUNKING & SANITIZER
+// ============================================================
 function chunkText(text: string, chunkSize = 800, chunkOverlap = 100): string[] {
   const chunks: string[] = [];
   let start = 0;
@@ -23,27 +46,18 @@ function chunkText(text: string, chunkSize = 800, chunkOverlap = 100): string[] 
   return chunks;
 }
 
-// -------------------------------------------------------------
-// FUNGSI PEMBERSIH ULTRA-AGRESIF (KHAS UNTUK PDF BERGAMBAR)
-// -------------------------------------------------------------
+// Fungsi Pembersih Ultra-Agresif Prof (Dikekalkan sepenuhnya)
 function sanitizeForDb(text: string): string {
   if (!text) return '';
-  
   let clean = text;
   
-  // 1. Buang unicode rosak/tergantung (Lone Surrogates) yang merosakkan JSON DB
   if (typeof clean.toWellFormed === 'function') {
      clean = clean.toWellFormed();
   } else {
      clean = clean.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/g, '');
   }
-
-  // 2. Musnahkan semua Null Bytes
   clean = clean.replace(/\0/g, '').replace(/\u0000/g, '').replace(/\\u0000/g, '');
-
-  // 3. Buang Control Characters dari imbasan gambar, TAPI biarkan newline (\n) dan tab (\t) untuk Koding!
   clean = clean.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, ' ');
-
   return clean.trim();
 }
 
@@ -63,8 +77,30 @@ async function getAuthenticatedUser(req: NextRequest) {
   }
 }
 
+// ============================================================
+// EXTRACT PDF TEXT (PDF2JSON - Sangat stabil)
+// ============================================================
+async function extractPdfText(buffer: Buffer): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const pdfParser = new PDFParser(null, true);
+    pdfParser.on("pdfParser_dataError", (errData: any) => reject(new Error(errData?.parserError)));
+    pdfParser.on("pdfParser_dataReady", () => {
+      let rawText = pdfParser.getRawTextContent();
+      try { rawText = decodeURIComponent(rawText); } catch {}
+      resolve(rawText || "");
+    });
+    pdfParser.parseBuffer(buffer);
+  });
+}
+
+// ============================================================
+// MAIN POST (API UPLOAD)
+// ============================================================
 export async function POST(req: NextRequest) {
+  let createdDocumentId: string | null = null;
+  
   try {
+    // 1. Kenal Pasti Pengguna
     const user = await getAuthenticatedUser(req);
     const userId = user?.id || 'public-user';
 
@@ -75,6 +111,7 @@ export async function POST(req: NextRequest) {
     if (!file) return NextResponse.json({ error: 'Fail PDF diperlukan.' }, { status: 400 });
     if (!subjectId) return NextResponse.json({ error: 'ID Subjek diperlukan.' }, { status: 400 });
 
+    // 2. Semak Pendua
     const { data: existingDoc, error: checkError } = await supabase
       .from('documents')
       .select('id')
@@ -84,99 +121,67 @@ export async function POST(req: NextRequest) {
 
     if (checkError) throw new Error(`Ralat menyemak data pendua: ${checkError.message}`);
     if (existingDoc) {
-      return NextResponse.json({ error: `Fail "${file.name}" telah wujud untuk subjek ini. Sila padam fail lama.` }, { status: 400 });
+      return NextResponse.json({ error: `Fail "${file.name}" telah wujud untuk subjek ini. Sila padam fail lama jika mahu ganti.` }, { status: 400 });
     }
 
+    // 3. Ekstrak Teks Menggunakan PDF2JSON (Stabil)
     const arrayBuffer = await file.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
+    const buffer = Buffer.from(arrayBuffer);
+    const rawText = await extractPdfText(buffer);
 
-    const rawModule = eval('require')('pdf-parse');
-    const parseFunc = typeof rawModule === 'function' ? rawModule : (rawModule.PDFParse || rawModule.default);
-
-    let resultInstance;
-    try {
-      resultInstance = await parseFunc(uint8Array);
-    } catch (parseError: any) {
-      if (parseError.message && parseError.message.includes("without 'new'")) {
-        resultInstance = new (parseFunc as any)(uint8Array);
-      } else {
-        throw parseError;
-      }
-    }
-    if (resultInstance && typeof resultInstance.then === 'function') resultInstance = await resultInstance;
-
-    let extractedText = '';
-    if (resultInstance && typeof resultInstance.getText === 'function') {
-      const parsed = await resultInstance.getText();
-      extractedText = parsed.text;
-      if (typeof resultInstance.destroy === 'function') await resultInstance.destroy();
-    } else if (resultInstance && resultInstance.text) {
-      extractedText = resultInstance.text;
+    if (!rawText || !rawText.trim()) {
+      return NextResponse.json({ error: 'Teks kosong atau PDF berbentuk imbasan gambar.' }, { status: 400 });
     }
 
-    if (!extractedText || !extractedText.trim()) {
-      return NextResponse.json({ error: 'Teks kosong atau PDF berbentuk imbasan penuh.' }, { status: 400 });
-    }
-
+    // 4. Simpan Dokumen Utama
     const { data: docData, error: docError } = await supabase
       .from('documents')
       .insert([{ subject_id: subjectId, file_url: file.name, file_name: file.name, user_id: userId }])
-      .select()
+      .select('id')
       .single();
 
-    if (docError) throw new Error(`Gagal menyimpan dokumen: ${docError.message}`);
-    const documentId = docData.id;
+    if (docError || !docData) throw new Error(`Gagal menyimpan rekod dokumen.`);
+    createdDocumentId = docData.id;
 
-    // Bersihkan seluruh teks sebelum masuk loop!
-    const cleanExtractedText = sanitizeForDb(extractedText);
+    // 5. Bersihkan, Pecahkan (Chunk), dan Jana Vektor (Transformers.js)
+    const cleanExtractedText = sanitizeForDb(rawText);
     const chunks = chunkText(cleanExtractedText);
+    const chunkRows = [];
 
     for (let i = 0; i < chunks.length; i++) {
       const safeChunk = sanitizeForDb(chunks[i]);
       
-      // ==========================================
-      // PENYELAMAT NYAWA: ABAIKAN PERENGGAN KOSONG
-      // ==========================================
-      if (!safeChunk || safeChunk.length === 0) {
-        console.warn(`Perenggan ke-${i + 1} hanya mengandungi sisa gambar. Diabaikan.`);
-        continue; 
-      }
+      if (!safeChunk || safeChunk.length === 0) continue; 
 
-      let embedding = null;
-      try {
-        const embedResponse = await ai.models.embedContent({
-          model: 'gemini-embedding-001',
-          contents: safeChunk,
-          config: { outputDimensionality: 768 },
-        });
+      // Dapatkan Vektor Tempatan (768 Dimensi)
+      const embedding = await getLocalEmbedding(safeChunk);
+      
+      chunkRows.push({
+        document_id: createdDocumentId,
+        content: safeChunk,
+        embedding: embedding
+      });
+    }
 
-        const rawVector = embedResponse.embeddings?.[0]?.values || (embedResponse as any)?.embedding?.values || (embedResponse as any)?.values;
-        
-        // PENGESAHAN VEKTOR KETAT: Jika ada elemen rosak, buang supaya DB tak error
-        if (Array.isArray(rawVector) && rawVector.length > 0) {
-           const isValid = rawVector.every(v => typeof v === 'number' && !isNaN(v));
-           if (isValid) {
-             embedding = rawVector;
-           }
-        }
-      } catch (embedErr) {
-        console.warn(`Amaran Google AI pada perenggan ke-${i + 1}:`, embedErr);
-      }
-
-      const { error: chunkError } = await supabase
-        .from('document_chunks')
-        .insert([{ document_id: documentId, content: safeChunk, embedding: embedding }]);
-
-      if (chunkError) throw new Error(`Gagal menyimpan perenggan ke-${i + 1}: ${chunkError.message}`);
+    // Simpan semua vektor chunks secara pukal (Bulk Insert) untuk kelajuan maksima
+    if (chunkRows.length > 0) {
+      const { error: chunkError } = await supabase.from('document_chunks').insert(chunkRows);
+      if (chunkError) throw new Error(`Gagal menyimpan data vektor: ${chunkError.message}`);
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Fail PDF (bersama gambar/kod) berjaya dibersihkan dan disimpan.',
-      documentId,
+      message: `Enjin RAG: Fail "${file.name}" disahkan dan diekstrak menjadi ${chunkRows.length} memori AI.`,
+      documentId: createdDocumentId,
     });
+
   } catch (error: any) {
-    console.error('Ralat Muat Naik PDF:', error);
+    // Jika ralat, padam semula dokumen (Rollback)
+    if (createdDocumentId) {
+      await supabase.from("document_chunks").delete().eq("document_id", createdDocumentId).catch(() => {});
+      await supabase.from("documents").delete().eq("id", createdDocumentId).catch(() => {});
+    }
+    console.error('Ralat API Upload Utama:', error);
     return NextResponse.json({ error: error.message || 'Ralat pelayan semasa memproses PDF.' }, { status: 500 });
   }
 }

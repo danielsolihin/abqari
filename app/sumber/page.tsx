@@ -35,7 +35,7 @@ function PusatSumberContent() {
   const [filterSubjectId, setFilterSubjectId] = useState('');
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
 
-  // Pembantu Token Pengesahan Sesi Supabase (Hanya untuk Muat Naik & Padam)
+  // Pembantu Token Pengesahan Sesi Supabase
   const getAuthHeaders = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
@@ -80,23 +80,25 @@ function PusatSumberContent() {
     }
   }, [searchParams]);
 
-  // 3. FUNGSI FETCH REAL-TIME (Tarik Terus Dari Pangkalan Data Untuk Elak Cache)
+  // 3. FUNGSI FETCH REAL-TIME
   const fetchDocuments = async () => {
     setIsLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
-      const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
 
       let query = supabase.from('documents').select('*').order('created_at', { ascending: false });
 
-      if (!isAdminUser) {
-        query = query.eq('user_id', user.id);
+      if (user) {
+        const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
+        const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
+
+        if (!isAdminUser) {
+          query = query.or(`user_id.eq.${user.id},user_id.is.null`);
+        }
       }
 
       const { data, error } = await query;
+      if (error) console.error('Ralat pangkalan data dokumen:', error.message);
       if (data) {
         setDocuments(data);
       }
@@ -107,21 +109,26 @@ function PusatSumberContent() {
     }
   };
 
+  // FUNGSI SUBJEK YANG TELAH DIPERBAIKI (Tolak sebarang seatan awal 'if (!user) return')
   const fetchSubjects = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
-      const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
 
       let query = supabase.from('subjects').select('*').order('name', { ascending: true });
 
-      if (!isAdminUser) {
-        query = query.eq('user_id', user.id);
+      if (user) {
+        const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
+        const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
+
+        if (!isAdminUser) {
+          query = query.or(`user_id.eq.${user.id},user_id.is.null`);
+        }
       }
 
       const { data, error } = await query;
+      if (error) {
+        console.error('Ralat pangkalan data semasa menarik subjek:', error.message);
+      }
       if (data) {
         setSubjects(data);
       }
@@ -135,7 +142,7 @@ function PusatSumberContent() {
     fetchSubjects();
   }, []);
 
-  // 4. Pengendali Muat Naik
+  // 4. Pengendali Muat Naik (Terhubung ke Enjin RAG)
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return alert('Sila pilih fail PDF.');
@@ -156,7 +163,7 @@ function PusatSumberContent() {
       const json = await res.json();
 
       if (res.ok && json.success) {
-        alert('Bahan kursus berjaya dimuat naik & dianalisis!');
+        alert('Bahan kursus berjaya dimuat naik & memori AI (RAG) telah dijana!');
         setIsModalOpen(false);
         setFile(null);
         setSelectedSubjectId('');
@@ -165,7 +172,7 @@ function PusatSumberContent() {
         alert(`Ralat Muat Naik: ${json.error || 'Gagal memproses.'}`);
       }
     } catch (error) {
-      alert('Berlaku ralat pelayan semasa muat naik.');
+      alert('Berlaku ralat pelayan semasa pemprosesan PDF.');
     } finally {
       setIsUploading(false);
     }
@@ -173,7 +180,7 @@ function PusatSumberContent() {
 
   // 5. Pengendali Padam
   const handleDelete = async (id: string) => {
-    if (!confirm('Adakah anda pasti mahu memadam dokumen ini?')) return;
+    if (!confirm('Adakah anda pasti mahu memadam dokumen ini? Memori AI berkaitan juga akan terpadam.')) return;
     try {
       const authHeaders = await getAuthHeaders();
       const res = await fetch('/api/documents', {

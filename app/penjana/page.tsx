@@ -451,7 +451,6 @@ export default function PenjanaSoalanPage() {
     setIsSavingBank(true);
     
     try {
-      // Mengira jumlah markah keseluruhan yang ditetapkan
       const totalMarks = (sections.A.enabled ? sections.A.marks : 0) + 
                          (sections.B.enabled ? sections.B.marks : 0) + 
                          (sections.C.enabled ? sections.C.marks : 0) || 100;
@@ -489,6 +488,9 @@ export default function PenjanaSoalanPage() {
     }
   };
 
+  // ============================================================
+  // FUNGSI JANAAN BERURUTAN (SEQUENTIAL) - Mencegah Race Condition
+  // ============================================================
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSubject) return alert('Sila pilih subjek terlebih dahulu.');
@@ -499,44 +501,38 @@ export default function PenjanaSoalanPage() {
     setGeneratedQuestions(null); 
     setGeneratedScheme(null); 
     setProgress(10);
-    setProgressText('Menjana draf awal soalan (Parallel)...');
+    setProgressText('Menjana draf awal soalan secara berurutan...');
 
     const progressMessages = [
-      "Mengekstrak rujukan silabus rasmi (Anti-Halusinasi)...",
-      "Semakan silang pematuhan JSU....",
-      "Mengemaskini format & jarak....",
-      "Menapis & menyemak tatabahasa....",
+      "Mengekstrak rujukan nota (Anti-Halusinasi)...",
+      "Semakan silang pematuhan JSU...",
+      "Mengemaskini format & jarak...",
       "Menyelaras struktur modular akhir..."
     ];
     
-    const progressQuotes = [
-      '"Sesiapa yang menempuh jalan untuk menuntut ilmu, Allah akan memudahkan baginya jalan ke syurga." (HR. Muslim)',
-      '"Sebaik-baik manusia adalah yang paling bermanfaat bagi manusia lain." (HR. Ahmad)',
-      '"Ilmu itu bukan yang dihafal, tetapi yang memberi manfaat." (Imam as-Syafie)',
-      '"Guru ibarat pelita, membakar diri untuk menerangi jalan generasi masa hadapan."',
-      '"Ketenangan dan kesabaran adalah kunci kepada hasil kerja yang sempurna. Sedikit masa lagi..."'
-    ];
-
     let msgIndex = 0;
-    setQuoteText(progressQuotes[0]);
-
     const intervalId = setInterval(() => {
       setProgressText(progressMessages[msgIndex % progressMessages.length]);
-      setQuoteText(progressQuotes[msgIndex % progressQuotes.length]);
       msgIndex++;
-      setProgress((prev) => (prev < 50 ? prev + 5 : prev));
-    }, 3500);
+      setProgress((prev) => (prev < 70 ? prev + 10 : prev));
+    }, 2500);
 
     try {
       const activeParts = (['A', 'B', 'C'] as const).filter(p => sections[p].enabled && sections[p].count > 0);
       const authHeaders = await getAuthHeaders();
 
-      const promises = activeParts.map(part => {
-        return fetch('/api/generate-questions', {
+      let fullQuestionsText = "";
+
+      // PENJANAAN BERURUTAN (Mencegah pertembungan Transformers.js)
+      for (const part of activeParts) {
+        setProgressText(`Sedang memproses BAHAGIAN ${part}...`);
+
+        const res = await fetch('/api/generate-questions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeaders },
           body: JSON.stringify({
             mode: part,
+            subjectId: selectedSubject,
             courseName,
             courseCode,
             theme,
@@ -550,37 +546,24 @@ export default function PenjanaSoalanPage() {
             language
           }),
         });
-      });
 
-      const responseObjs = await Promise.all(promises);
-      
-      // TAMBAHAN: Semak respon untuk had kredit (HTTP 429)
-      for (const res of responseObjs) {
-        if (res.status === 429) {
-           const errData = await res.json();
-           clearInterval(intervalId);
-           setIsGenerating(false);
-           alert(errData.error || "Had kredit harian telah dicapai.");
-           return; // Hentikan penjanaan serta merta
+        const json = await res.json();
+
+        if (!res.ok || !json.success) {
+          clearInterval(intervalId);
+          setIsGenerating(false);
+          // Paparkan mesej ralat sebenar daripada backend (cth: penapis resit/nota kosong)
+          alert(`Gagal Menjana Bahagian ${part}:\n${json.error || 'Ralat tidak diketahui'}`);
+          return;
         }
+
+        const partTitle = language === 'English' ? `PART ${part}` : language === 'Bahasa Arab' ? `الجزء ${part}` : `BAHAGIAN ${part}`;
+        fullQuestionsText += `${partTitle}:\n\n${json.data}\n\n`;
       }
 
-      const results = await Promise.all(responseObjs.map(res => res.json()));
-      
-      clearInterval(intervalId);
-      setProgress(60);
-      setProgressText('Menyatukan hasil soalan modular...');
-
-      let fullQuestionsText = "";
-      activeParts.forEach((part, index) => {
-        const partTitle = language === 'English' ? `PART ${part}` : language === 'Bahasa Arab' ? `الجزء ${part}` : `BAHAGIAN ${part}`;
-        const dataText = results[index]?.data || `[Gagal menjana Bahagian ${part}]`;
-        fullQuestionsText += `${partTitle}:\n\n${dataText}\n\n`;
-      });
-      
       setGeneratedQuestions(fullQuestionsText.trim());
 
-      setProgress(80);
+      setProgress(85);
       setProgressText('Menjana Skema Jawapan penuh...');
 
       const schemeRes = await fetch('/api/generate-questions', {
@@ -588,6 +571,7 @@ export default function PenjanaSoalanPage() {
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           mode: 'SCHEMA',
+          subjectId: selectedSubject,
           courseName,
           courseCode,
           fullQuestions: fullQuestionsText.trim(),
@@ -597,9 +581,13 @@ export default function PenjanaSoalanPage() {
       });
 
       const schemeData = await schemeRes.json();
-      setGeneratedScheme(schemeData?.data || "Skema gagal dijana.");
+      if (schemeRes.ok && schemeData.success) {
+        setGeneratedScheme(schemeData.data);
+      } else {
+        setGeneratedScheme("Skema gagal dijana.");
+      }
 
-      // AUTO-SIMPAN KE DALAM JADUAL 'archives' MELALUI API
+      // AUTO-SIMPAN KE DALAM JADUAL 'archives'
       try {
         const archiveData = {
           course_code: courseCode || 'TIADA',
@@ -611,31 +599,23 @@ export default function PenjanaSoalanPage() {
           scheme_text: schemeData?.data || "Tiada skema dijana"
         };
 
-        const archiveRes = await fetch('/api/archives', {
+        await fetch('/api/archives', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(archiveData)
         });
-
-        const archiveJson = await archiveRes.json();
-        
-        if (!archiveRes.ok || !archiveJson.success) {
-           throw new Error(archiveJson.error || "Ralat tidak diketahui");
-        }
-        
-        console.log("Salinan berjaya dihantar ke Arkib Admin secara automatik.");
       } catch (archiveErr) {
         console.error("Amaran: Gagal menghantar salinan ke Arkib.", archiveErr);
       }
 
       setProgress(100);
       setProgressText('Selesai!');
-      setTimeout(() => setIsGenerating(false), 800);
-      
-    } catch (error) { 
+      setTimeout(() => setIsGenerating(false), 500);
+
+    } catch (error: any) { 
       clearInterval(intervalId);
       console.error(error);
-      alert("Ralat sistem semasa memproses secara modular.");
+      alert(`Ralat sistem: ${error.message || 'Gagal memproses soalan.'}`);
       setIsGenerating(false); 
     }
   };
@@ -672,7 +652,6 @@ export default function PenjanaSoalanPage() {
           >
             ← Kembali ke Papan Pemuka
           </Link>
-
 
 
           <div style={{ textAlign: 'center' }}>
@@ -880,7 +859,6 @@ export default function PenjanaSoalanPage() {
                   <button onClick={handleDownloadQuestionWord} style={{ padding: '8px 14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>📄 MS Word</button>
                   {generatedScheme && ( <button onClick={handleDownloadSchemeWord} style={{ padding: '8px 14px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>✅ Skema</button> )}
                   
-                  {/* BUTANG DIKEMAS KINI: Simpan ke Bank Soalan */}
                   <button 
                     onClick={handleSaveToBank} 
                     disabled={isSavingBank}
@@ -888,7 +866,6 @@ export default function PenjanaSoalanPage() {
                   >
                     {isSavingBank ? '⏳ Menyimpan...' : isSavedBank ? '✓ Berjaya Disimpan' : '💾 Simpan ke Bank'}
                   </button>
-                  
                 </div>
               )}
             </div>
