@@ -21,7 +21,10 @@
       {
         "name": "next"
       }
-    ]
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
   },
   "include": [
     "next-env.d.ts",
@@ -33,6 +36,8 @@
   ],
   "exclude": [
     "node_modules",
+    "_BACKUP_ABQARI_LAMA_",
+    "_BACKUP_*",
     "app/api/chat/route.ts",
     "app/api/generate-questions/route.ts",
     "app/api/upload-document/route.ts",

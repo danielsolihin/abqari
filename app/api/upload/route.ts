@@ -4,7 +4,8 @@ import PDFParser from "pdf2json";
 import { pipeline } from "@xenova/transformers";
 
 export const runtime = 'nodejs';
-export const maxDuration = 300; // Penting untuk AI Tempatan
+// Disesuaikan kepada 60 saat mengikut had maksimum Vercel Hobby Tier
+export const maxDuration = 60; 
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -46,13 +47,13 @@ function chunkText(text: string, chunkSize = 800, chunkOverlap = 100): string[] 
   return chunks;
 }
 
-// Fungsi Pembersih Ultra-Agresif Prof (Dikekalkan sepenuhnya)
+// Fungsi Pembersih Ultra-Agresif
 function sanitizeForDb(text: string): string {
   if (!text) return '';
   let clean = text;
   
-  if (typeof clean.toWellFormed === 'function') {
-     clean = clean.toWellFormed();
+  if (typeof (clean as any).toWellFormed === 'function') {
+     clean = (clean as any).toWellFormed();
   } else {
      clean = clean.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/g, '');
   }
@@ -176,10 +177,14 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: any) {
-    // Jika ralat, padam semula dokumen (Rollback)
+    // Jika ralat, padam semula dokumen (Rollback) secara selamat dan patuh TypeScript
     if (createdDocumentId) {
-      await supabase.from("document_chunks").delete().eq("document_id", createdDocumentId).catch(() => {});
-      await supabase.from("documents").delete().eq("id", createdDocumentId).catch(() => {});
+      try {
+        await supabase.from("document_chunks").delete().eq("document_id", createdDocumentId);
+        await supabase.from("documents").delete().eq("id", createdDocumentId);
+      } catch (rollbackError) {
+        console.error('Ralat semasa rollback dokumen:', rollbackError);
+      }
     }
     console.error('Ralat API Upload Utama:', error);
     return NextResponse.json({ error: error.message || 'Ralat pelayan semasa memproses PDF.' }, { status: 500 });
