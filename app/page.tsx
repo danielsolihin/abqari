@@ -43,7 +43,7 @@ export default function DashboardUtama() {
   const [changePassword, setChangePassword] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
-  const [stats, setStats] = useState({ subjects: 0, docs: 0, archives: 0, users: 0 });
+  const [stats, setStats] = useState({ subjects: 0, docs: 0, archives: 0, users: 0, pendingUsers: 0 });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
   useEffect(() => {
@@ -133,13 +133,22 @@ export default function DashboardUtama() {
           }
         }
 
+        // KEMAS KINI: Tarik data pengguna melalui API Backend (Bebas dari RLS)
         let totalUsers = 1;
+        let pendingUsersCount = 0;
+        
         if (isAdminUser) {
           try {
-            const { count: uCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
-            totalUsers = uCount || 1;
+            const timeStamp = new Date().getTime();
+            const statRes = await fetch(`/api/stats?t=${timeStamp}`, { cache: 'no-store' });
+            const statJson = await statRes.json();
+            
+            if (statJson.success) {
+              totalUsers = statJson.totalUsers;
+              pendingUsersCount = statJson.pendingUsers;
+            }
           } catch (e) {
-            totalUsers = 0;
+            console.error('Gagal menarik statistik pengguna.');
           }
         }
 
@@ -147,7 +156,8 @@ export default function DashboardUtama() {
           subjects: subCount || 0,
           docs: docCountVal || 0,
           archives: finalArchiveCount,
-          users: totalUsers
+          users: totalUsers,
+          pendingUsers: pendingUsersCount
         });
 
       } catch (err) {
@@ -320,7 +330,9 @@ export default function DashboardUtama() {
       display: 'flex', 
       alignItems: 'center', 
       gap: '16px',
-      boxShadow: '0 10px 20px rgba(0,0,0,0.18)'
+      boxShadow: '0 10px 20px rgba(0,0,0,0.18)',
+      position: 'relative' as const, 
+      overflow: 'hidden' as const
     },
     
     menuContainer: { display: 'flex', flexWrap: 'wrap' as const, gap: '16px', justifyContent: 'center' },
@@ -410,6 +422,14 @@ export default function DashboardUtama() {
 
   return (
     <div style={styles.page}>
+      {/* CSS Animasi untuk Blinking Tag */}
+      <style>{`
+        @keyframes blinkAnim {
+          0% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.6; transform: scale(1.05); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
       
       <div style={styles.banner} />
 
@@ -486,13 +506,13 @@ export default function DashboardUtama() {
                   </div>
                 </div>
 
-                {/* KEMAS KINI: BUTANG KEMASKINI PROFIL (Warna Serasi Kotak Masa & Teks Biru Lembut) */}
+                {/* BUTANG KEMASKINI PROFIL */}
                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   <button 
                     onClick={() => setIsProfileModalOpen(true)}
                     style={{
                       backgroundColor: 'rgba(0,0,0,0.3)', 
-                      color: '#93c5fd', // Warna teks Biru Lembut
+                      color: '#93c5fd', 
                       border: '1px solid rgba(255, 255, 255, 0.12)', 
                       padding: '8px 14px',
                       borderRadius: '8px', 
@@ -590,16 +610,36 @@ export default function DashboardUtama() {
             </div>
           </div>
 
-          {/* KEMAS KINI: KOTAK PENGGUNA BERDAFTAR HANYA MUNCUL JIKA ADMIN */}
+          {/* KOTAK PENGGUNA BERDAFTAR BERSERTA BLINKING TAG (HANYA ADMIN) */}
           {isAdmin && (
             <div style={styles.statCard}>
               <div style={{ backgroundColor: 'rgba(255,255,255,0.12)', padding: '10px', borderRadius: '10px' }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
               </div>
-              <div>
+              <div style={{ flex: 1 }}>
                 <h3 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '900', color: '#4ade80' }}>{isLoadingStats ? '...' : stats.users}</h3>
                 <p style={{ margin: 0, fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '600' }}>Pengguna Berdaftar</p>
               </div>
+
+              {/* INDIKATOR KELIP JIKA ADA PENDAFTARAN BAHARU */}
+              {!isLoadingStats && stats.pendingUsers > 0 && (
+                <div style={{
+                  position: 'absolute', 
+                  top: '12px', 
+                  right: '12px',
+                  backgroundColor: '#ef4444', 
+                  color: 'white', 
+                  padding: '4px 8px',
+                  borderRadius: '20px', 
+                  fontSize: '0.75rem', 
+                  fontWeight: 'bold',
+                  boxShadow: '0 0 12px rgba(239, 68, 68, 0.8)',
+                  animation: 'blinkAnim 1.5s infinite',
+                  border: '1px solid #fca5a5'
+                }}>
+                  {stats.pendingUsers} Baru!
+                </div>
+              )}
             </div>
           )}
         </div>

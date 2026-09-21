@@ -80,7 +80,7 @@ function PusatSumberContent() {
     }
   }, [searchParams]);
 
-  // 3. FUNGSI FETCH REAL-TIME
+  // 3. FUNGSI FETCH REAL-TIME (DOKUMEN)
   const fetchDocuments = async () => {
     setIsLoading(true);
     try {
@@ -93,8 +93,14 @@ function PusatSumberContent() {
         const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
 
         if (!isAdminUser) {
-          query = query.or(`user_id.eq.${user.id},user_id.is.null`);
+          // Penapisan Ketat Dokumen: Hanya milik pengguna ini
+          query = query.eq('user_id', user.id);
         }
+      } else {
+         // Jika tiada sesi user, elakkan paparan data untuk keselamatan
+         setDocuments([]);
+         setIsLoading(false);
+         return;
       }
 
       const { data, error } = await query;
@@ -109,26 +115,32 @@ function PusatSumberContent() {
     }
   };
 
-  // FUNGSI SUBJEK YANG TELAH DIPERBAIKI (Tolak sebarang seatan awal 'if (!user) return')
+  // FUNGSI SUBJEK YANG TELAH DIPERBAIKI PENAPISANNYA (FILTER)
   const fetchSubjects = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
+      if (!user) {
+         setSubjects([]); // Keselamatan: Tiada user, tiada subjek
+         return; 
+      }
+
       let query = supabase.from('subjects').select('*').order('name', { ascending: true });
 
-      if (user) {
-        const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
-        const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
+      const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
+      const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
 
-        if (!isAdminUser) {
-          query = query.or(`user_id.eq.${user.id},user_id.is.null`);
-        }
+      // PENAPISAN KETAT: Jika bukan admin, WAJIB hanya tarik subjek milik user.id sahaja.
+      if (!isAdminUser) {
+        query = query.eq('user_id', user.id); 
       }
 
       const { data, error } = await query;
+      
       if (error) {
         console.error('Ralat pangkalan data semasa menarik subjek:', error.message);
       }
+      
       if (data) {
         setSubjects(data);
       }
