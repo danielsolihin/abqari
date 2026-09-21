@@ -2,25 +2,31 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation'; // TAMBAHAN ROUTER
 
 const BLOOM_OPTIONS = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'P1', 'P2', 'P3', 'P4', 'P5', 'A1', 'A2', 'A3', 'A4', 'A5'];
 const DIFFICULTY_OPTIONS = ['Mudah', 'Sederhana', 'Sukar'];
 
 export default function BankSoalanPage() {
+  const router = useRouter(); // INAKTIFAKN ROUTER
   const [questions, setQuestions] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // State Penapis (Filter) & Carian
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState('');
   const [selectedBloomFilter, setSelectedBloomFilter] = useState('');
 
-  // State Modal Tambah Soalan Baharu
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalTab, setModalTab] = useState<'manual' | 'pdf'>('manual');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Form State
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractStatus, setExtractStatus] = useState('');
+
   const [formSubjectId, setFormSubjectId] = useState('');
   const [formQuestionText, setFormQuestionText] = useState('');
   const [formAnswerScheme, setFormAnswerScheme] = useState('');
@@ -30,10 +36,8 @@ export default function BankSoalanPage() {
   const [formLoCode, setFormLoCode] = useState('LO1');
   const [formDifficulty, setFormDifficulty] = useState('Sederhana');
 
-  // State Toggle Tunjuk Jawapan (per question ID)
   const [expandedAnswers, setExpandedAnswers] = useState<{ [key: string]: boolean }>({});
 
-  // 1. Fetch Subjek (Ditapis Mengikut Pengguna)
   const fetchSubjects = async () => {
     try {
       const { createClient } = await import('@supabase/supabase-js');
@@ -49,13 +53,11 @@ export default function BankSoalanPage() {
 
       let query = supabase.from('subjects').select('*').order('name', { ascending: true });
 
-      // JIKA BUKAN ADMIN: Hanya tarik subjek milik pensyarah tersebut
       if (!isAdminUser) {
         query = query.eq('user_id', user.id);
       }
 
       const { data: directSubjects } = await query;
-        
       if (directSubjects && directSubjects.length > 0) {
         setSubjects(directSubjects);
       } else {
@@ -66,8 +68,14 @@ export default function BankSoalanPage() {
     }
   };
 
-  // 2. Fetch Soalan (Logik Baharu: Tapisan Mengikut subject_id pensyarah)
   const fetchQuestions = async () => {
+    setSelectedQuestionIds([]); 
+    if (!selectedSubjectFilter) {
+      setQuestions([]);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const { createClient } = await import('@supabase/supabase-js');
@@ -84,36 +92,10 @@ export default function BankSoalanPage() {
       const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
       const isAdminUser = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
 
-      let allowedSubjectIds: string[] = [];
-
-      // Dapatkan senarai subject_id milik pensyarah terlebih dahulu
-      if (!isAdminUser) {
-        const { data: mySubjects } = await supabase
-          .from('subjects')
-          .select('id')
-          .eq('user_id', user.id);
-          
-        allowedSubjectIds = mySubjects?.map(s => s.id) || [];
-        
-        // Jika pensyarah ini tiada subjek, maka tiada soalan patut dipaparkan
-        if (allowedSubjectIds.length === 0) {
-          setQuestions([]);
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      let query = supabase.from('questions').select('*, subjects(name, course_code)');
-
-      // Jika BUKAN admin, papar soalan dalam senarai subjek yang dibenarkan sahaja
-      if (!isAdminUser) {
-        query = query.in('subject_id', allowedSubjectIds);
-      }
-
-      // Jika ada penapis subjek dipilih dalam UI
-      if (selectedSubjectFilter) {
-        query = query.eq('subject_id', selectedSubjectFilter);
-      }
+      let query = supabase
+        .from('questions')
+        .select('*, subjects(name, course_code)')
+        .eq('subject_id', selectedSubjectFilter);
 
       const { data, error } = await query.order('created_at', { ascending: false });
 
@@ -139,7 +121,18 @@ export default function BankSoalanPage() {
     fetchQuestions();
   }, [selectedSubjectFilter]);
 
-  // 3. Simpan Soalan Baharu
+  // FUNGSI JANA SOALAN PINTAR (HANTAR ID KE PAGE JANA-SOALAN)
+  const handleJanaSoalanRoute = () => {
+    if (selectedQuestionIds.length > 0) {
+      // Jika ada soalan dipilih secara manual, simpan dalam LocalStorage dan bawa ke mod manual
+      localStorage.setItem('manual_jsu_ids', JSON.stringify(selectedQuestionIds));
+      router.push(`/jana-soalan?mode=manual&subject=${selectedSubjectFilter}`);
+    } else {
+      // Jika tiada pilihan, pergi ke page JSU seperti biasa
+      router.push('/jana-soalan');
+    }
+  };
+
   const handleCreateQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formSubjectId) return alert('Sila pilih subjek.');
@@ -173,6 +166,7 @@ export default function BankSoalanPage() {
       const json = await res.json();
       if (json.success) {
         alert('Soalan berjaya disimpan ke dalam Bank Soalan!');
+        setSelectedSubjectFilter(formSubjectId);
         setIsModalOpen(false);
         setFormQuestionText('');
         setFormAnswerScheme('');
@@ -188,7 +182,48 @@ export default function BankSoalanPage() {
     }
   };
 
-  // 4. Padam Soalan
+  const handleExtractPDF = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formSubjectId) return alert('Sila pilih Subjek terlebih dahulu.');
+    if (!selectedFile) return alert('Sila muat naik fail PDF Kertas Soalan Lepas.');
+
+    setIsExtracting(true);
+    setExtractStatus('🚀 Menghantar fail ke enjin AI...');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('subject_id', formSubjectId);
+
+      const res = await fetch('/api/extract-pdf-questions', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Ralat pelayan.');
+      }
+
+      const data = await res.json();
+      if (data.success) {
+        alert(`✅ Berjaya! AI mengekstrak ${data.extracted_count} soalan dan memasukkannya ke dalam bank.`);
+        setSelectedSubjectFilter(formSubjectId);
+        setIsModalOpen(false);
+        setSelectedFile(null);
+        setModalTab('manual');
+        fetchQuestions();
+      } else {
+        alert(`Ralat Ekstraksi: ${data.error}`);
+      }
+    } catch (error: any) {
+      alert(`Gagal mengekstrak PDF: ${error.message}`);
+    } finally {
+      setIsExtracting(false);
+      setExtractStatus('');
+    }
+  };
+
   const handleDeleteQuestion = async (id: string) => {
     if (!confirm('Adakah anda pasti mahu memadam soalan ini dari Bank Soalan?')) return;
 
@@ -199,14 +234,12 @@ export default function BankSoalanPage() {
         body: JSON.stringify({ id }),
       });
 
-      if (!res.ok) {
-        alert(`Ralat memadam (${res.status})`);
-        return;
-      }
+      if (!res.ok) return alert(`Ralat memadam (${res.status})`);
 
       const json = await res.json();
       if (json.success) {
         setQuestions(prev => prev.filter(q => q.id !== id));
+        setSelectedQuestionIds(prev => prev.filter(qId => qId !== id));
       } else {
         alert(`Ralat: ${json.error || 'Gagal memadam.'}`);
       }
@@ -215,13 +248,6 @@ export default function BankSoalanPage() {
     }
   };
 
-  const toggleAnswer = (id: string) => {
-    setExpandedAnswers(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  // ==========================================
-  // PENAPIS CARIAN TEMPATAN (KATA KUNCI & BLOOM)
-  // ==========================================
   const filteredQuestions = questions.filter(q => {
     const safeSearchQuery = searchQuery.toLowerCase().trim();
     const matchesSearch = 
@@ -234,28 +260,62 @@ export default function BankSoalanPage() {
     return matchesSearch && matchesBloom;
   });
 
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedQuestionIds(filteredQuestions.map(q => q.id));
+    } else {
+      setSelectedQuestionIds([]);
+    }
+  };
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedQuestionIds(prev =>
+      prev.includes(id) ? prev.filter(qId => qId !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedQuestionIds.length === 0) return;
+    if (!confirm(`AMARAN: Anda pasti mahu memadam ${selectedQuestionIds.length} soalan yang dipilih ini secara serentak?`)) return;
+
+    let successCount = 0;
+    for (const id of selectedQuestionIds) {
+      try {
+        const res = await fetch('/api/questions', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success) successCount++;
+        }
+      } catch (err) {
+        console.error(`Gagal memadam soalan ${id}:`, err);
+      }
+    }
+
+    alert(`✅ Berjaya memadam ${successCount} soalan.`);
+    setSelectedQuestionIds([]);
+    fetchQuestions();
+  };
+
+  const toggleAnswer = (id: string) => {
+    setExpandedAnswers(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
   const styles = {
     page: { backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '"Inter", "Segoe UI", sans-serif', paddingBottom: '60px' },
-    banner: {
-      height: '250px',
-      background: 'linear-gradient(135deg, #1e1b4b, #312e81)',
-      color: 'white',
-      padding: '30px 20px',
-      boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
-      borderBottom: '4px solid #fde047'
-    },
+    banner: { height: '250px', background: 'linear-gradient(135deg, #1e1b4b, #312e81)', color: 'white', padding: '30px 20px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', borderBottom: '4px solid #fde047' },
     container: { maxWidth: '1200px', margin: '-40px auto 0 auto', padding: '0 20px', position: 'relative' as 'relative', zIndex: 10 },
     topBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
     backBtn: { display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#f8fafc', backgroundColor: 'rgba(255,255,255,0.15)', padding: '8px 16px', borderRadius: '8px', textDecoration: 'none', fontWeight: '700', fontSize: '0.85rem' },
-    
     card: { backgroundColor: 'white', borderRadius: '14px', padding: '25px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)', marginBottom: '25px' },
-    
     input: { padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outlineColor: '#312e81', width: '100%', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box' as const },
     btnPrimary: { backgroundColor: '#312e81', color: 'white', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', border: 'none', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(49,46,129,0.2)' },
+    btnDanger: { backgroundColor: '#ef4444', color: 'white', padding: '10px 18px', borderRadius: '8px', fontWeight: '700', border: 'none', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(239, 68, 68, 0.2)' },
     btnSuccess: { backgroundColor: '#10b981', color: 'white', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', border: 'none', cursor: 'pointer' },
-    
     badge: { padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: '800' },
-    
     modalOverlay: { position: 'fixed' as 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' },
     modalBox: { backgroundColor: 'white', borderRadius: '14px', width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto' as 'auto', padding: '30px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)' }
   };
@@ -263,13 +323,10 @@ export default function BankSoalanPage() {
   return (
     <div style={styles.page}>
       
-      {/* BANNER HEADER */}
       <div style={styles.banner}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
           <div style={styles.topBar}>
-            <Link href="/" style={styles.backBtn}>
-              ← Ke Papan Pemuka Utama
-            </Link>
+            <Link href="/" style={styles.backBtn}>← Ke Papan Pemuka Utama</Link>
             <span style={{ fontSize: '0.85rem', color: '#c7d2fe', fontWeight: '600' }}>Pusat Repositori Soalan ABQARI</span>
           </div>
           <h1 style={{ margin: '10px 0 5px 0', fontSize: '2rem', fontWeight: '900', color: '#fde047' }}>
@@ -283,19 +340,45 @@ export default function BankSoalanPage() {
 
       <div style={styles.container}>
         
-        {/* KOTAK KAWALAN & PENAPIS (FILTERS) */}
         <div style={styles.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', marginBottom: '20px' }}>
             <div>
               <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#0f172a', fontWeight: '800' }}>
                 Senarai Soalan Terkumpul ({filteredQuestions.length})
               </h3>
-              <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>Gunakan carian dan penapis di bawah untuk mengecilkan carian soalan.</p>
+              <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>Pilih subjek di bawah untuk memaparkan soalan.</p>
             </div>
 
-            <button style={styles.btnPrimary} onClick={() => setIsModalOpen(true)}>
-              + Tambah Soalan Baharu
-            </button>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              {selectedQuestionIds.length > 0 && (
+                <button style={styles.btnDanger} onClick={handleBulkDelete}>
+                  🗑️ Padam Dipilih ({selectedQuestionIds.length})
+                </button>
+              )}
+
+              {/* BUTANG JANA SOALAN DINAMIK */}
+              <button onClick={handleJanaSoalanRoute} style={{
+                backgroundColor: selectedQuestionIds.length > 0 ? '#f59e0b' : '#10b981',
+                color: 'white',
+                padding: '10px 18px',
+                borderRadius: '8px',
+                fontWeight: '700',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 4px 10px rgba(0,0,0,0.15)',
+                transition: 'all 0.2s'
+              }}>
+                ⚙️ {selectedQuestionIds.length > 0 ? `Jana Manual (${selectedQuestionIds.length} Soalan)` : 'Jana Auto JSU'}
+              </button>
+
+              <button style={styles.btnPrimary} onClick={() => setIsModalOpen(true)}>
+                + Tambah Soalan Baharu
+              </button>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px' }}>
@@ -304,20 +387,21 @@ export default function BankSoalanPage() {
               <input
                 type="text"
                 placeholder="Taip soalan atau skema..."
-                style={{ ...styles.input, cursor: 'text' }}
+                disabled={!selectedSubjectFilter}
+                style={{ ...styles.input, cursor: !selectedSubjectFilter ? 'not-allowed' : 'text', backgroundColor: !selectedSubjectFilter ? '#f1f5f9' : '#fff' }}
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.8rem', fontWeight: '700', color: '#475569' }}>📚 Penapis Subjek</label>
+              <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.8rem', fontWeight: '700', color: '#475569' }}>📚 Penapis Subjek <span style={{ color: '#ef4444' }}>*</span></label>
               <select
-                style={styles.input}
+                style={{ ...styles.input, border: !selectedSubjectFilter ? '2px solid #6366f1' : '1px solid #cbd5e1' }}
                 value={selectedSubjectFilter}
                 onChange={e => setSelectedSubjectFilter(e.target.value)}
               >
-                <option value="">-- Semua Subjek --</option>
+                <option value="">-- Pilih Subjek Terlebih Dahulu --</option>
                 {subjects.map(s => (
                   <option key={s.id} value={s.id}>
                     {s.course_code === 'TIADA' ? '' : `${s.course_code} - `}{s.name}
@@ -329,7 +413,8 @@ export default function BankSoalanPage() {
             <div>
               <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.8rem', fontWeight: '700', color: '#475569' }}>🎯 Penapis Bloom</label>
               <select
-                style={styles.input}
+                disabled={!selectedSubjectFilter}
+                style={{ ...styles.input, cursor: !selectedSubjectFilter ? 'not-allowed' : 'pointer', backgroundColor: !selectedSubjectFilter ? '#f1f5f9' : '#fff' }}
                 value={selectedBloomFilter}
                 onChange={e => setSelectedBloomFilter(e.target.value)}
               >
@@ -342,8 +427,17 @@ export default function BankSoalanPage() {
           </div>
         </div>
 
-        {/* SENARAI SOALAN (CARDS) */}
-        {isLoading ? (
+        {!selectedSubjectFilter ? (
+          <div style={{ ...styles.card, textAlign: 'center', padding: '60px 20px', backgroundColor: '#ffffff', border: '2px dashed #cbd5e1' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '15px' }}>📌</div>
+            <h3 style={{ margin: '0 0 8px 0', color: '#0f172a', fontSize: '1.2rem', fontWeight: '800' }}>
+              Sila Pilih Subjek / Kursus
+            </h3>
+            <p style={{ margin: '0 auto', color: '#64748b', fontSize: '0.9rem', maxWidth: '500px', lineHeight: '1.5' }}>
+              Sila buat pilihan di ruangan <strong>📚 Penapis Subjek</strong> di atas untuk memaparkan senarai soalan yang berkaitan.
+            </p>
+          </div>
+        ) : isLoading ? (
           <div style={{ ...styles.card, textAlign: 'center', padding: '40px' }}>
             <p style={{ margin: 0, color: '#64748b', fontWeight: '600' }}>⏳ Memuatkan soalan dari pangkalan data...</p>
           </div>
@@ -351,14 +445,45 @@ export default function BankSoalanPage() {
           <div style={{ ...styles.card, textAlign: 'center', padding: '50px' }}>
             <p style={{ fontSize: '2.5rem', margin: '0 0 10px 0' }}>📂</p>
             <h3 style={{ margin: '0 0 5px 0', color: '#0f172a' }}>Tiada Soalan Dijumpai</h3>
-            <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>Sila tambah soalan baharu atau tukar tetapan penapis carian anda.</p>
+            <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>Tiada soalan disimpan untuk subjek ini lagi. Sila tambah soalan baharu.</p>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#ffffff', padding: '12px 20px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: '800', color: '#1e293b' }}>
+                <input
+                  type="checkbox"
+                  onChange={handleSelectAll}
+                  checked={filteredQuestions.length > 0 && selectedQuestionIds.length === filteredQuestions.length}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#312e81' }}
+                />
+                Pilih Semua Soalan ({selectedQuestionIds.length} / {filteredQuestions.length} dipilih)
+              </label>
+            </div>
+
             {filteredQuestions.map((q, idx) => (
-              <div key={q.id} style={{ ...styles.card, marginBottom: 0, borderLeft: '5px solid #312e81' }}>
+              <div 
+                key={q.id} 
+                style={{ 
+                  ...styles.card, 
+                  marginBottom: 0, 
+                  borderLeft: '5px solid #312e81',
+                  backgroundColor: selectedQuestionIds.includes(q.id) ? '#fef3c7' : '#ffffff', // Warna kuning lembut jika tick
+                  borderColor: selectedQuestionIds.includes(q.id) ? '#f59e0b' : '#e2e8f0',
+                  transition: 'all 0.2s'
+                }}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    
+                    <input
+                      type="checkbox"
+                      checked={selectedQuestionIds.includes(q.id)}
+                      onChange={() => handleToggleSelect(q.id)}
+                      style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#312e81' }}
+                    />
+
                     <span style={{ backgroundColor: '#e0e7ff', color: '#3730a3', ...styles.badge }}>
                       #{idx + 1}
                     </span>
@@ -396,12 +521,10 @@ export default function BankSoalanPage() {
                   </div>
                 </div>
 
-                {/* TEKS SOALAN */}
                 <div style={{ fontSize: '0.95rem', color: '#0f172a', lineHeight: '1.6', fontWeight: '600', whiteSpace: 'pre-line', marginBottom: '15px' }}>
                   {q.question_text}
                 </div>
 
-                {/* BUTANG TOGGLE & SKEMA JAWAPAN */}
                 {q.answer_scheme && (
                   <div style={{ borderTop: '1px dashed #e2e8f0', paddingTop: '12px' }}>
                     <button
@@ -426,131 +549,155 @@ export default function BankSoalanPage() {
 
       </div>
 
-      {/* MODAL TAMBAH SOALAN BAHARU */}
       {isModalOpen && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalBox}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <h2 style={{ margin: 0, fontSize: '1.3rem', color: '#0f172a', fontWeight: '800' }}>
-                ✍️ Tambah Soalan ke Bank Soalan
+                Tambah Soalan ke Bank Soalan
               </h2>
               <button onClick={() => setIsModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✕</button>
             </div>
 
-            <form onSubmit={handleCreateQuestion}>
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.85rem', color: '#334155' }}>
-                  Pilih Subjek / Kursus <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <select
-                  required
-                  style={styles.input}
-                  value={formSubjectId}
-                  onChange={e => setFormSubjectId(e.target.value)}
-                >
-                  <option value="">-- Pilih Subjek --</option>
-                  {subjects.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.course_code === 'TIADA' ? '' : `${s.course_code} - `}{s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', marginBottom: '20px' }}>
+              <button 
+                onClick={() => setModalTab('manual')} 
+                style={{ flex: 1, padding: '12px', background: 'none', border: 'none', borderBottom: modalTab === 'manual' ? '3px solid #312e81' : '3px solid transparent', color: modalTab === 'manual' ? '#312e81' : '#64748b', fontWeight: '800', cursor: 'pointer', transition: 'all 0.2s' }}
+              >
+                ✍️ Taip Manual
+              </button>
+              <button 
+                onClick={() => setModalTab('pdf')} 
+                style={{ flex: 1, padding: '12px', background: 'none', border: 'none', borderBottom: modalTab === 'pdf' ? '3px solid #10b981' : '3px solid transparent', color: modalTab === 'pdf' ? '#047857' : '#64748b', fontWeight: '800', cursor: 'pointer', transition: 'all 0.2s' }}
+              >
+                ✨ Ekstrak AI (Fail PDF)
+              </button>
+            </div>
 
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.85rem', color: '#334155' }}>
-                  Teks Soalan <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <textarea
-                  required
-                  rows={4}
-                  placeholder="Taip arahan dan teks soalan penuh di sini..."
-                  style={{ ...styles.input, fontFamily: 'inherit', cursor: 'text' }}
-                  value={formQuestionText}
-                  onChange={e => setFormQuestionText(e.target.value)}
-                />
-              </div>
-
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.85rem', color: '#334155' }}>
-                  Skema Jawapan & Kata Kunci Pemarkahan (Opsional)
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Sediakan poin skema jawapan rasmi..."
-                  style={{ ...styles.input, fontFamily: 'inherit', cursor: 'text' }}
-                  value={formAnswerScheme}
-                  onChange={e => setFormAnswerScheme(e.target.value)}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.8rem', color: '#334155' }}>Markah</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={100}
-                    style={{ ...styles.input, cursor: 'text' }}
-                    value={formMarks}
-                    onChange={e => setFormMarks(Number(e.target.value))}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.8rem', color: '#334155' }}>Aras Bloom</label>
-                  <select style={styles.input} value={formBloomLevel} onChange={e => setFormBloomLevel(e.target.value)}>
-                    {BLOOM_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
+            {modalTab === 'manual' && (
+              <form onSubmit={handleCreateQuestion}>
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.85rem', color: '#334155' }}>
+                    Pilih Subjek / Kursus <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <select required style={styles.input} value={formSubjectId} onChange={e => setFormSubjectId(e.target.value)}>
+                    <option value="">-- Pilih Subjek --</option>
+                    {subjects.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.course_code === 'TIADA' ? '' : `${s.course_code} - `}{s.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.8rem', color: '#334155' }}>Kod CO</label>
-                  <input
-                    type="text"
-                    placeholder="Cth: CO1"
-                    style={{ ...styles.input, cursor: 'text' }}
-                    value={formCoCode}
-                    onChange={e => setFormCoCode(e.target.value)}
-                  />
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.85rem', color: '#334155' }}>
+                    Teks Soalan <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <textarea required rows={4} placeholder="Taip arahan dan teks soalan penuh di sini..." style={{ ...styles.input, fontFamily: 'inherit', cursor: 'text' }} value={formQuestionText} onChange={e => setFormQuestionText(e.target.value)} />
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.8rem', color: '#334155' }}>Kod LO</label>
-                  <input
-                    type="text"
-                    placeholder="Cth: LO1"
-                    style={{ ...styles.input, cursor: 'text' }}
-                    value={formLoCode}
-                    onChange={e => setFormLoCode(e.target.value)}
-                  />
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.85rem', color: '#334155' }}>
+                    Skema Jawapan & Kata Kunci (Opsional)
+                  </label>
+                  <textarea rows={3} placeholder="Sediakan poin skema jawapan rasmi..." style={{ ...styles.input, fontFamily: 'inherit', cursor: 'text' }} value={formAnswerScheme} onChange={e => setFormAnswerScheme(e.target.value)} />
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.8rem', color: '#334155' }}>Tahap Kesukaran</label>
-                  <select style={styles.input} value={formDifficulty} onChange={e => setFormDifficulty(e.target.value)}>
-                    {DIFFICULTY_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.8rem', color: '#334155' }}>Markah</label>
+                    <input type="number" min={1} max={100} style={{ ...styles.input, cursor: 'text' }} value={formMarks} onChange={e => setFormMarks(Number(e.target.value))} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.8rem', color: '#334155' }}>Aras Bloom</label>
+                    <select style={styles.input} value={formBloomLevel} onChange={e => setFormBloomLevel(e.target.value)}>
+                      {BLOOM_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.8rem', color: '#334155' }}>Kod CO</label>
+                    <input type="text" placeholder="Cth: CO1" style={{ ...styles.input, cursor: 'text' }} value={formCoCode} onChange={e => setFormCoCode(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.8rem', color: '#334155' }}>Kod LO</label>
+                    <input type="text" placeholder="Cth: LO1" style={{ ...styles.input, cursor: 'text' }} value={formLoCode} onChange={e => setFormLoCode(e.target.value)} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button type="button" onClick={() => setIsModalOpen(false)} style={{ backgroundColor: 'transparent', border: '1px solid #cbd5e1', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', color: '#475569' }}>Batal</button>
+                  <button type="submit" disabled={isSubmitting} style={styles.btnSuccess}>
+                    {isSubmitting ? '⏳ Menyimpan...' : '💾 Simpan Soalan'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {modalTab === 'pdf' && (
+              <form onSubmit={handleExtractPDF}>
+                
+                <div style={{ marginBottom: '20px', backgroundColor: '#f0fdf4', padding: '15px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                  <h4 style={{ margin: '0 0 5px 0', color: '#166534', fontSize: '0.9rem' }}>ℹ️ Cara AI Mengekstrak</h4>
+                  <p style={{ margin: 0, color: '#15803d', fontSize: '0.8rem', lineHeight: '1.5' }}>
+                    Muat naik fail Kertas Soalan Lepas (PDF). AI akan membaca keseluruhan fail, mengekstrak setiap soalan secara berasingan, dan meneka Aras Bloom secara automatik. Sesuai untuk fail di bawah 5MB.
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.85rem', color: '#334155' }}>
+                    Pilih Subjek / Kursus <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <select required style={styles.input} value={formSubjectId} onChange={e => setFormSubjectId(e.target.value)}>
+                    <option value="">-- Pilih Subjek untuk soalan-soalan ini --</option>
+                    {subjects.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.course_code === 'TIADA' ? '' : `${s.course_code} - `}{s.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
-              </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  style={{ backgroundColor: 'transparent', border: '1px solid #cbd5e1', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', color: '#475569' }}
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  style={styles.btnSuccess}
-                >
-                  {isSubmitting ? '⏳ Menyimpan...' : '💾 Simpan Soalan'}
-                </button>
-              </div>
-            </form>
+                <div style={{ marginBottom: '25px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '0.85rem', color: '#334155' }}>
+                    Muat Naik Fail PDF Kertas Soalan <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  
+                  <div style={{ border: '2px dashed #cbd5e1', padding: '30px 20px', borderRadius: '12px', textAlign: 'center', backgroundColor: '#f8fafc', cursor: 'pointer', position: 'relative' }}>
+                    <input 
+                      type="file" 
+                      accept="application/pdf"
+                      required
+                      disabled={isExtracting}
+                      onChange={(e) => setSelectedFile(e.target.files ? e.target.files[0] : null)}
+                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: isExtracting ? 'not-allowed' : 'pointer' }}
+                    />
+                    <div style={{ fontSize: '2.5rem', marginBottom: '10px' }}>📄</div>
+                    <div style={{ fontWeight: '700', color: '#334155', fontSize: '1rem', marginBottom: '5px' }}>
+                      {selectedFile ? selectedFile.name : 'Klik atau Heret fail PDF ke sini'}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                      {selectedFile ? `Saiz: ${(selectedFile.size / 1024 / 1024).toFixed(2)} MB` : 'Format disokong: PDF (Maksimum 5MB)'}
+                    </div>
+                  </div>
+                </div>
+
+                {isExtracting && (
+                  <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#e0f2fe', borderRadius: '8px', border: '1px solid #bae6fd', textAlign: 'center' }}>
+                    <div style={{ fontWeight: '700', color: '#0369a1', fontSize: '0.9rem', marginBottom: '5px' }}>{extractStatus}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#0284c7' }}>Sila tunggu, proses ini mungkin mengambil masa 20 - 45 saat...</div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button type="button" onClick={() => setIsModalOpen(false)} style={{ backgroundColor: 'transparent', border: '1px solid #cbd5e1', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', color: '#475569' }} disabled={isExtracting}>Batal</button>
+                  <button type="submit" disabled={isExtracting || !selectedFile} style={{ ...styles.btnSuccess, backgroundColor: (isExtracting || !selectedFile) ? '#94a3b8' : '#10b981', boxShadow: (isExtracting || !selectedFile) ? 'none' : '0 4px 10px rgba(16, 185, 129, 0.3)' }}>
+                    {isExtracting ? '⏳ AI Sedang Mengekstrak...' : '✨ Ekstrak & Masukkan ke Bank'}
+                  </button>
+                </div>
+              </form>
+            )}
+
           </div>
         </div>
       )}

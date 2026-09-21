@@ -168,6 +168,19 @@ const formatSubjectDisplay = (code: string, name: string) => {
   return n;
 };
 
+// SENARAI KATA-KATA HIKMAH, AL-QURAN & HADITH SEMASA PROSES PENJANAAN
+const islamicQuotes = [
+  '📖 "Wahai Tuhanku, tambahkanlah kepadaku ilmu pengetahuan." — (Surah Taha: 114)',
+  '✨ "Barangsiapa menempuh jalan untuk menuntut ilmu, Allah akan mudahkan baginya jalan ke syurga." — (HR. Muslim)',
+  '🌟 "Allah mengangkat kedudukan orang-orang yang beriman dan orang-orang yang diberi ilmu beberapa darjat." — (Surah Al-Mujadilah: 11)',
+  '💡 "Sebaik-baik manusia adalah yang paling bermanfaat kepada manusia lain." — (HR. Ahmad)',
+  '🌱 "Sesungguhnya bersama kesulitan itu ada kemudahan." — (Surah Ash-Sharh: 6)',
+  '🎓 Mendidik dengan ihsan, menyusun soalan dengan hikmah demi melahirkan generasi bertakwa...',
+  '🤲 "Katakanlah: Adakah sama orang-orang yang mengetahui dengan orang-orang yang tidak mengetahui?" — (Surah Az-Zumar: 9)',
+  '📚 "Ilmu itu adalah kehidupan bagi hati daripada kegelapan kejahilan." — (Imam al-Ghazali)',
+  '🕊️ "Niat yang ikhlas dalam menyampaikan ilmu adalah punca keberkatan ilmu tersebut."'
+];
+
 export default function PenjanaSoalanPage() {
   const [subjects, setSubjects] = useState<any[]>([]);
   const [selectedSubject, setSelectedSubject] = useState('');
@@ -441,6 +454,9 @@ export default function PenjanaSoalanPage() {
     } catch (error) { alert('Gagal menjana Word.'); }
   };
 
+  // ============================================================
+  // FUNGSI PINTAR SIMPAN KE BANK SOALAN (PECAH SOALAN INDIVIDU)
+  // ============================================================
   const handleSaveToBank = async () => {
     if (!generatedQuestions) return;
     if (!selectedSubject) {
@@ -451,34 +467,50 @@ export default function PenjanaSoalanPage() {
     setIsSavingBank(true);
     
     try {
-      const totalMarks = (sections.A.enabled ? sections.A.marks : 0) + 
-                         (sections.B.enabled ? sections.B.marks : 0) + 
-                         (sections.C.enabled ? sections.C.marks : 0) || 100;
+      // 1. Bersihkan teks dan pecahkan mengikut pola nombor soalan (1., 2., 3., dll.)
+      const questionBlocks = generatedQuestions
+        .split(/(?=(?:^|\n)\s*(?:BAHAGIAN|PART|الجزء)?\s*[A-Z]?:?\s*\n*\s*\d+[\.\)]\s*)/gi)
+        .map((b) => b.replace(/^(?:BAHAGIAN|PART|الجزء)\s+[A-Z]:?\s*/gi, '').trim())
+        .filter((b) => b.length > 5 && /^\d+[\.\)]/i.test(b));
 
-      const payload = {
-        subject_id: selectedSubject,
-        question_text: generatedQuestions,
-        answer_scheme: generatedScheme || '',
-        marks: totalMarks,
-        bloom_level: 'Campuran',
-        co_code: subjectCOs[0] || 'CO1',
-        lo_code: subjectLOs[0] || 'LO1',
-        difficulty: 'Sederhana'
-      };
+      // Jika tiada penomboran dikesan, jadikan keseluruhan teks sebagai fallback
+      const finalBlocks = questionBlocks.length > 0 ? questionBlocks : [generatedQuestions.trim()];
 
-      const res = await fetch('/api/questions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+      // 2. Bina senarai rekod individu
+      const insertPayload = finalBlocks.map((block) => {
+        const bloomMatch = block.match(/\[(C[1-6]|P[1-5]|A[1-5])\]/i);
+        const detectedBloom = bloomMatch ? bloomMatch[1].toUpperCase() : 'C1';
+
+        const coMatch = block.match(/\[(CO\d*|CLO\d*)\]/i);
+        const detectedCO = coMatch ? coMatch[1].toUpperCase() : (subjectCOs[0] || 'CO1');
+
+        const loMatch = block.match(/\[(LO\d*|PLO\d*)\]/i);
+        const detectedLO = loMatch ? loMatch[1].toUpperCase() : (subjectLOs[0] || 'LO1');
+
+        const isObjectiveOrTF = /[A-D]\.[\t\s]|[A-D]\)[\t\s]|\[\s*(BENAR|SALAH|TRUE|FALSE)\s*\]/i.test(block);
+        const markVal = isObjectiveOrTF ? 1 : 5;
+
+        return {
+          subject_id: selectedSubject,
+          question_text: block,
+          answer_scheme: '',
+          marks: markVal,
+          bloom_level: detectedBloom,
+          co_code: detectedCO,
+          lo_code: detectedLO,
+          difficulty: 'Sederhana'
+        };
       });
 
-      const json = await res.json();
+      // 3. Masukkan senarai soalan berasingan terus ke Supabase
+      const { error } = await supabase.from('questions').insert(insertPayload);
 
-      if (res.ok && json.success) {
+      if (!error) {
         setIsSavedBank(true);
+        alert(`✅ Berjaya! ${insertPayload.length} soalan individu telah disimpan ke Bank Soalan.`);
         setTimeout(() => setIsSavedBank(false), 3000);
       } else {
-        throw new Error(json.error || 'Gagal menyimpan ke Bank Soalan.');
+        throw new Error(error.message || 'Gagal menyimpan ke Bank Soalan.');
       }
     } catch (error: any) {
       console.error("Ralat menyimpan ke Bank Soalan:", error);
@@ -502,6 +534,7 @@ export default function PenjanaSoalanPage() {
     setGeneratedScheme(null); 
     setProgress(10);
     setProgressText('Menjana draf awal soalan secara berurutan...');
+    setQuoteText(islamicQuotes[0]);
 
     const progressMessages = [
       "Mengekstrak rujukan nota (Anti-Halusinasi)...",
@@ -513,6 +546,7 @@ export default function PenjanaSoalanPage() {
     let msgIndex = 0;
     const intervalId = setInterval(() => {
       setProgressText(progressMessages[msgIndex % progressMessages.length]);
+      setQuoteText(islamicQuotes[(msgIndex + 1) % islamicQuotes.length]);
       msgIndex++;
       setProgress((prev) => (prev < 70 ? prev + 10 : prev));
     }, 2500);
@@ -523,7 +557,7 @@ export default function PenjanaSoalanPage() {
 
       let fullQuestionsText = "";
 
-      // PENJANAAN BERURUTAN (Mencegah pertembungan Transformers.js)
+      // PENJANAAN BERURUTAN
       for (const part of activeParts) {
         setProgressText(`Sedang memproses BAHAGIAN ${part}...`);
 
@@ -552,7 +586,6 @@ export default function PenjanaSoalanPage() {
         if (!res.ok || !json.success) {
           clearInterval(intervalId);
           setIsGenerating(false);
-          // Paparkan mesej ralat sebenar daripada backend (cth: penapis resit/nota kosong)
           alert(`Gagal Menjana Bahagian ${part}:\n${json.error || 'Ralat tidak diketahui'}`);
           return;
         }
@@ -782,7 +815,7 @@ export default function PenjanaSoalanPage() {
                         {(sections[part].type === 'objektif') && (
                            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center' }}>
                               <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#475569', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                                Bilangan Soalan Beranak (Penyata + Roman):
+                                Bilangan Soalan Berlapis (Penyata + Roman):
                                 <input type="number" min="0" max={sections[part].count || 0} value={sections[part].beranakCount || 0} onChange={e => updateSection(part, 'beranakCount', Number(e.target.value))} style={{...styles.input, width: '70px', marginLeft: '10px', padding: '4px 8px'}} />
                               </label>
                            </div>

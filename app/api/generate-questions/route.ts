@@ -10,7 +10,19 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PU
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ============================================================
-// GANTI LOCAL EMBEDDING KEPADA OPENAI EMBEDDING (LEBIH PANTAS & STABIL DI VERCEL)
+// PEMETAAN KATA TUGAS / KATA PERINTAH TAKSONOMI BLOOM (C1 - C6)
+// ============================================================
+const BLOOM_VERBS_MAP: Record<string, string[]> = {
+  C1: ["Aktifkan", "Perihalkan", "Kenal pasti", "Labelkan", "Senaraikan", "Padankan", "Namakan", "Lakarkan", "Nyatakan kembali", "Hasilkan semula", "Pilih", "Nyatakan"],
+  C2: ["Ubah", "Tafsirkan", "Jelaskan", "Rumuskan", "Wajarkan", "Terangkan", "Ramalkan", "Terjemahkan", "Anggarkan", "Buat inferens", "Tulis semula"],
+  C3: ["Itlakkan", "Hitung", "Tunjuk cara", "Teroka", "Ubah suai", "Sediakan", "Selesaikan", "Jana", "Manipulasikan", "Ramal", "Tunjukkan", "Hubungkaitkan"],
+  C4: ["Analisis", "Pilih", "Asingkan", "Bandingkan", "Bezakan", "Jelaskan dengan gambar rajah", "Huraikan", "Tunjukkan perbezaan", "Diskriminasikan", "Kenal pasti", "Ilustrasikan", "Buat inferens", "Lakarkan", "Hubungkaitkan"],
+  C5: ["Gabungkan", "Karang", "Jana", "Organisasikan", "Bina semula", "Reka cipta", "Ubah suai", "Atur semula", "Tulis", "Semak", "Huraikan", "Rancang", "Himpunkan", "Hubungkaitkan", "Organisasikan semula", "Rumuskan", "Tulis semula"],
+  C6: ["Taksir", "Bandingkan", "Simpulkan", "Bezakan", "Kritik", "Wajarkan", "Diskriminasikan", "Nilaikan", "Tafsirkan", "Adili", "Bincangkan kewajaran", "Rumuskan dan sokong"]
+};
+
+// ============================================================
+// OPENAI EMBEDDING (PANTAS & STABIL DI VERCEL)
 // ============================================================
 async function getEmbedding(text: string): Promise<number[]> {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -23,9 +35,9 @@ async function getEmbedding(text: string): Promise<number[]> {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "text-embedding-3-small", // Model terbaharu, murah dan pantas
+      model: "text-embedding-3-small",
       input: text,
-      dimensions: 768, // Paksa saiz 768 supaya sepadan dengan database Supabase asal (Xenova)
+      dimensions: 768,
     }),
   });
 
@@ -39,13 +51,22 @@ async function getEmbedding(text: string): Promise<number[]> {
 }
 
 // ============================================================
-// FUNGSI PENAPIS AUTOMATIK PEKA BAHASA (3-LANGUAGES SUPPORT)
+// FUNGSI PENAPIS AUTOMATIK PEKA BAHASA & TATABAHASA
 // ============================================================
-function cleanAndTransformQuestions(text: string, language: string = "Bahasa Melayu"): string {
+function cleanAndTransformQuestions(text: string, language: string = "Bahasa Melayu", questionType: string = "objektif"): string {
   if (!text) return "";
 
   let processedText = text.replace(/\\t/g, "\t");
   processedText = processedText.replace(/\bDiskusikan\b/gi, "Bincangkan");
+
+  // PEMBETULAN TATABAHASA SOALAN OBJEKTIF SAHAJA (Tukarkan kata perintah kepada kata tanya)
+  if (questionType === "objektif" || questionType === "true_false") {
+    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Hitung\b/gmi, "$1Manakah");
+    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Tunjukkan cara bagaimana\b/gmi, "$1Bagaimanakah cara");
+    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Tunjuk cara bagaimana\b/gmi, "$1Bagaimanakah cara");
+    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Tunjukkan bagaimana\b/gmi, "$1Bagaimanakah");
+    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Tunjuk cara\b/gmi, "$1Bagaimanakah cara");
+  }
 
   const langLower = (language || "").toLowerCase();
   const isArabic = langLower.includes("arab") || langLower.includes("arabic");
@@ -121,7 +142,10 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
 
     if (/^\d+\.\s+/.test(line)) {
       isNested = false;
-      if (line.includes("Apakah ") && Math.random() > 0.4) {
+      
+      const isNounQuestion = /Apakah\s+(tujuan|maksud|definisi|elemen|faktor|fungsi|komponen|pernyataan|konsep|sifat|kesan|cabaran|peranan)/i.test(line);
+
+      if (line.includes("Apakah ") && !isNounQuestion && Math.random() > 0.6) {
         const randomPrefix = questionPrefixes[Math.floor(Math.random() * questionPrefixes.length)];
         lines[i] = line.replace(/Apakah\s+/gi, `${randomPrefix} `);
       }
@@ -134,6 +158,15 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
   }
 
   return lines.join("\n");
+}
+
+// ============================================================
+// MEMECAHKAN TEKS GERGASI KEPADA SOALAN INDIVIDU
+// ============================================================
+function splitIntoIndividualQuestions(fullText: string): string[] {
+  if (!fullText) return [];
+  const parts = fullText.split(/(?=\n?\b\d+\.[\t\s])/g);
+  return parts.map((p) => p.trim()).filter((p) => p.length > 0);
 }
 
 export async function POST(req: NextRequest) {
@@ -245,6 +278,21 @@ ${fullQuestions}`;
 
     const bloomStr = Object.entries(sectionData?.bloom || activeSec?.bloom || {}).filter(([_, count]) => Number(count) > 0).map(([lvl]) => `${lvl}`).join(", ") || "C1";
     
+    // PEMBINAAN PANDUAN KATA KERJA BLOOM (KATA PERINTAH)
+    const activeBloomLevels = Object.entries(sectionData?.bloom || activeSec?.bloom || {})
+      .filter(([_, count]) => Number(count) > 0)
+      .map(([lvl]) => lvl.toUpperCase());
+
+    let bloomVerbsInstruction = "";
+    if (activeBloomLevels.length > 0) {
+      bloomVerbsInstruction = "\nARAHAN KATA TUGAS / KATA PERINTAH BLOOM (WAJIB GUNAKAN SEBAGAI KATA AWALAN SOALAN):\n";
+      activeBloomLevels.forEach(level => {
+        if (BLOOM_VERBS_MAP[level]) {
+          bloomVerbsInstruction += `- Aras ${level}: [${BLOOM_VERBS_MAP[level].join(", ")}]\n`;
+        }
+      });
+    }
+
     const parseNum = (val: any) => { const n = Number(val); return isNaN(n) ? 0 : n; };
     const count = parseNum(sectionData?.count) || parseNum(activeSec?.count) || parseNum(body?.count) || 5;
     const beranak = parseNum(sectionData?.beranakCount) || parseNum(activeSec?.beranakCount) || parseNum(activeSec?.beranak) || parseNum(body?.beranakCount) || parseNum(body?.beranak) || 0;
@@ -253,6 +301,9 @@ ${fullQuestions}`;
     const domainStr = domain.length > 0 ? domain[0] : "P3";
     const coStr = co.length > 0 ? co[0] : "CO1";
     const loStr = lo.length > 0 ? lo[0] : "LO1";
+
+    const totalSectionMarks = parseNum(sectionData?.marks) || parseNum(activeSec?.marks) || 10;
+    const subMarks = Math.max(1, Math.floor(totalSectionMarks / (count * 2)));
 
     let formatInstructions = "";
 
@@ -312,8 +363,8 @@ ${beranakRuleNoteAr}
         formatInstructions = `صيغة الأسئلة المقالية (${count} أسئلة). مثال:
 1.\tتلعب أصول الفقه دوراً محورياً في ضبط عملية الاجتهاد واستنباط الأحكام الشرعية.
 
-\ta. ناقش أهمية القواعد الأصولية في فهم النصوص الشرعية. (${(sectionData?.marks || 10) / count / 2} درجات)
-\tb. بين كيف يتم التعامل مع التعارض الظاهري بين الأدلة. (${(sectionData?.marks || 10) / count / 2} درجات)
+\ta. ناقش أهمية القواعد الأصولية في فهم النصوص الشرعية. (${subMarks} درجات)
+\tb. بين كيف يتم التعامل مع التعارض الظاهري بين الأدلة. (${subMarks} درجات)
 \t[C4] [${coStr}] [${loStr}] [${domainStr}]`;
       }
     } else if (isEnglish) {
@@ -372,8 +423,8 @@ EXAMPLE:
         formatInstructions = `Format Essay (${count} questions). EXAMPLE:
 1.\tIntegration serves as a foundational concept.
 
-\ta. Explain the process of evaluating a definite integral. (${(sectionData?.marks || 10) / count / 2} Marks)
-\tb. Derive the rate of change for the differential equation. (${(sectionData?.marks || 10) / count / 2} Marks)
+\ta. Explain the process of evaluating a definite integral. (${subMarks} Marks)
+\tb. Derive the rate of change for the differential equation. (${subMarks} Marks)
 \t[C4] [${coStr}] [${loStr}] [${domainStr}]`;
       }
     } else {
@@ -391,17 +442,18 @@ EXAMPLE:
 PENGATURAN KUANTITI SOALAN (AMARAN SANGAT MUTLAK):
 - JUMLAH KESELURUHAN SOALAN: TEPAT ${count} SOALAN (bernombor 1 hingga ${count}).
 ${beranakRuleNote}
+${bloomVerbsInstruction}
 
 ARAHAN SOALAN BIASA:
-- Pelbagaikan kata soal. Setiap pilihan jawapan WAJIB fakta yang berbeza.
+- Bina soalan objektif.
 - ATURAN KEDUDUKAN SELARI: Anda WAJIB meletakkan 1 Tab (\\t) TEPAT selepas nombor soalan, dan 1 Tab (\\t) sebelum kesemua pilihan jawapan.
 CONTOH:
-1.\tBagaimanakah dasar pendidikan dapat menyatupadukan rakyat?
+1.\tApakah tujuan utama Falsafah Pendidikan Kebangsaan?
 
-\tA. Melalui penggunaan bahasa kebangsaan
-\tB. Dengan menghapuskan sekolah vernakular
-\tC. Memperkenalkan subjek antarabangsa
-\tD. Meningkatkan yuran pengajian
+\tA. Membangunkan jiwa rohani dan akal budi
+\tB. Menghapuskan sekolah vernakular
+\tC. Meningkatkan kebolehpasaran kerja
+\tD. Mengurangkan beban pelajar
 \t[C3] [${coStr}] [${loStr}] [${domainStr}]
 
 ARAHAN SOALAN BERANAK:
@@ -410,7 +462,7 @@ ARAHAN SOALAN BERANAK:
 CONTOH:
 2.\tPenglibatan masyarakat penting dalam pembangunan.
 
-\tBerdasarkan pernyataan di atas, apakah langkah yang wajar?
+\tBerdasarkan pernyataan di atas, manakah antara berikut merupakan langkah yang wajar?
 
 \ti. Kurikulum yang inklusif
 \tii. Pengajaran bahasa ibunda
@@ -430,11 +482,19 @@ CONTOH:
 \t[C1] [${coStr}] [${loStr}] [${domainStr}]`;
       } else {
         formatInstructions = `Format Esei (${count} soalan). CONTOH WAJIB:
-1.\tPendidikan memainkan peranan signifikan. Sistem ini memupuk nilai kebersamaan.
+${bloomVerbsInstruction}
+CONTOH STRUKTUR ESEI WAJIB PATUH:
+1.\tPendidikan memainkan peranan signifikan dalam pembangunan negara. Sistem ini memupuk nilai kebersamaan.
 
-\ta. Bincangkan peranan pendidikan dalam memupuk patriotisme. (${(sectionData?.marks || 10) / count / 2} Markah)
-\tb. Huraikan langkah proaktif oleh pihak sekolah. (${(sectionData?.marks || 10) / count / 2} Markah)
-\t[C4] [${coStr}] [${loStr}] [${domainStr}]`;
+\ta. Bincangkan peranan pendidikan dalam memupuk patriotisme. (${subMarks} Markah)
+\tb. Huraikan langkah proaktif oleh pihak sekolah dalam memperkasa nilai murni. (${subMarks} Markah)
+\t[C4] [${coStr}] [${loStr}] [${domainStr}]
+
+PERATURAN FORMAT ESEI & TATABAHASA KATA PERINTAH (AMARAN KERAS):
+1. Setiap soalan esei WAJIB ada penyataan utama, diikuti anak soalan 'a.' dan 'b.' berserta agihan markah '(X Markah)'.
+2. DILARANG SAMA SEKALI meletakkan sebarang kurungan Bloom (seperti (C1), (C2)) di mana-mana bahagian dalam teks soalan atau penyataan!
+3. TATABAHASA KATA PERINTAH: Anda mesti menggunakan kata tugas perintah yang diarahkan (Contoh: "Analisis...", "Huraikan...", "Bezakan...", "Ilustrasikan..."). DILARANG memulakan soalan arahan dengan imbuhan kata kerja aktif seperti "Menganalisis", "Mengilustrasi", "Menghuraikan". Gunakan KATA SURUHAN secara terus pada anak soalan 'a.' dan 'b.'.
+4. Tag JSU ([C4] [${coStr}] [${loStr}] [${domainStr}]) WAJIB diletakkan di baris terakhir sekali (di bawah anak soalan b) bagi setiap soalan esei, dan WAJIB di-tab (\\t).`;
       }
     }
 
@@ -482,11 +542,14 @@ ARAHAN PENGIKATAN DOKUMEN / NOTA (STRICT CONTEXT GROUNDING MUTLAK):
 1. Anda WAJIB menggubal soalan 100% BERDASARKAN DAN BERSUMBERKAN TEKS NOTA KURSUS di bawah SAHAJA.
 2. DILARANG SAMA SEKALI mereka-reka atau membawa masuk fakta am di luar kandungan dokumen!
 
+ARAHAN KATA KERJA BLOOM (SANGAT MUTLAK):
+Anda MESTI membina anak-anak soalan menggunakan Kata Tugas / Kata Perintah yang disenaraikan mengikut Aras Bloom yang dipilih ($C1-$C6).
+
 JANA TEPAT ${count} SOALAN SAHAJA (TANPA SKEMA/JAWAPAN).
 ${formatInstructions}
 
 PERATURAN MUTLAK:
-1. TAG JSU ([C3] [${coStr}] [${loStr}] [${domainStr}]) WAJIB ada di baris akhir setiap soalan dan WAJIB di-tab (\\t). Ganti C3 dengan: ${bloomStr}.
+1. TAG JSU ([C3] [${coStr}] [${loStr}] [${domainStr}]) WAJIB ada di baris akhir setiap soalan dan WAJIB di-tab (\\t). Ganti C3 dengan aras Bloom yang sedang anda gunakan, contoh: ${bloomStr}.
 2. DILARANG menggunakan tanda bintik (* atau **).
 3. DILARANG meletakkan sebarang tajuk bahagian.
 
@@ -509,7 +572,33 @@ ${finalContext}`;
 
     let rawOutput = openaiData.choices?.[0]?.message?.content || "";
 
-    const finalCleanData = cleanAndTransformQuestions(rawOutput, language);
+    const finalCleanData = cleanAndTransformQuestions(rawOutput, language, questionType);
+
+    // ============================================================
+    // PEMASUKAN AUTOMATIK KE SUPABASE (PECAH KEPADA KAD INDIVIDU)
+    // ============================================================
+    if (targetSubjectId) {
+      const individualQuestions = splitIntoIndividualQuestions(finalCleanData);
+      if (individualQuestions.length > 0) {
+        const insertPayload = individualQuestions.map((qText) => {
+          const bloomMatch = qText.match(/\[(C[1-6]\vert{}P[1-5]\vert{}A[1-5])\]/i);
+          const detectedBloom = bloomMatch ? bloomMatch[1].toUpperCase() : (bloomStr || "C1");
+
+          return {
+            subject_id: targetSubjectId,
+            question_text: qText,
+            answer_scheme: "",
+            marks: questionType === "objektif" ? 1 : totalSectionMarks / count,
+            bloom_level: detectedBloom,
+            difficulty: "Sederhana",
+            co_code: coStr,
+            lo_code: loStr,
+          };
+        });
+
+        await supabase.from("questions").insert(insertPayload);
+      }
+    }
 
     return NextResponse.json({ success: true, data: finalCleanData });
   } catch (error: any) {
