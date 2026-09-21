@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import PanduanModal from '../components/PanduanModal';
 
 // Inisialisasi Supabase
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -16,6 +17,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  
+  // State untuk mengawal Modal Panduan & FAQ
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -235,6 +239,36 @@ export default function LoginPage() {
                   Daftar Akaun
                 </Link>
               </div>
+              
+              {/* BUTANG PANDUAN & FAQ YANG BAHARU DITAMBAH */}
+              <div style={{ marginTop: '15px', textAlign: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(true)}
+                  style={{
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)', 
+                    border: '1px solid #bfdbfe',
+                    color: '#2563eb', 
+                    padding: '8px 20px', 
+                    borderRadius: '20px',
+                    fontSize: '0.85rem', 
+                    fontWeight: '700', 
+                    cursor: 'pointer',
+                    display: 'inline-flex', 
+                    alignItems: 'center', 
+                    gap: '8px',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
+                  }}
+                >
+                  📚 Panduan & FAQ ABQARI
+                </button>
+              </div>
 
             </div>
 
@@ -247,6 +281,9 @@ export default function LoginPage() {
         </div>
 
       </div>
+
+      {/* Panggil Modal di luar struktur grid utama */}
+      <PanduanModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </>
   );
 }
