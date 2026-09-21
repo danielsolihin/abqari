@@ -4,7 +4,8 @@ import { pipeline } from "@xenova/transformers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+// Disesuaikan kepada 60 saat mengikut had maksimum Vercel Hobby Tier bagi mengelakkan ralat deployment
+export const maxDuration = 60;
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
