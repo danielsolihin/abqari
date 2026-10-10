@@ -42,7 +42,7 @@ CO10: Kemahiran Keusahawanan - Peluang perniagaan, inisiatif.
 CO11: Etika dan Profesionalisme - Nilai, etika, integriti.
 
 [DOMAIN KOGNITIF / ARAS BLOOM (C)]
-C1 (Pengetahuan): Mengingat أو menyatakan semula fakta/konsep.
+C1 (Pengetahuan): Mengingat atau menyatakan semula fakta/konsep.
 C2 (Pemahaman): Menerangkan, menghuraikan, memberikan contoh.
 C3 (Aplikasi): Menggunakan pengetahuan dalam situasi tertentu.
 C4 (Analisis): Memecahkan maklumat, mengenal pasti hubungan/perbandingan.
@@ -87,6 +87,10 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
 
   let processedText = text.replace(/\\t/g, "\t");
   processedText = processedText.replace(/\bDiskusikan\b/gi, "Bincangkan");
+
+  // PEMBETULAN AUTOMATIK EJAAN ETIKA
+  processedText = processedText.replace(/\bEthika\b/g, "Etika");
+  processedText = processedText.replace(/\bethika\b/g, "etika");
 
   if (questionType === "objektif" || questionType === "true_false") {
     // Baiki ralat ejaan minor
@@ -145,6 +149,27 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
     processedText = processedText.replace(/\bdalam petikan ini\b/gi, "berdasarkan topik ini");
   }
 
+  // PEMBERSIHAN TANDA BACA BERTINDIH
+  processedText = processedText.replace(/,[\s\.]*\./g, ".");
+  processedText = processedText.replace(/,[\s,]+/g, ", ");
+  processedText = processedText.replace(/\.\.+/g, ".");
+
+  // PEMBAIKAN KHAS ENJIN PREMIUM: MEMISAHKAN PILIHAN JAWAPAN 'A.' JIKA IA TERCANTUM SEBARIS DENGAN SOALAN
+  if (questionType === "objektif") {
+    processedText = processedText.replace(/(\?|\.)[\t\s]+(A[\.\)][\t\s]+)/g, "$1\n\n\t$2");
+    processedText = processedText.replace(/([^\n])[\t\s]+([B-D][\.\)][\t\s]+)/g, "$1\n\t$2");
+  }
+
+  // PEMBAIKAN KHAS SOALAN BERANAK: MEMISAHKAN AYAT PENYATA DAN SOALAN UTAMA PADA BARIS BAHARU (TAB 1 ENTER)
+  if (questionType === "objektif") {
+    processedText = processedText.replace(/^(\d+\.[\t\s]+[^\n\?]+)\?\s*((?:Apakah|Bagaimanakah|Manakah|Mengapakah|Siapakah|Pilih|Pernyataan|Kombinasi|Langkah|Antara)[^\n\?]+\?)(?=\s*\n+[\t\s]*i\.)/gmi, (match, p1, p2) => {
+      const cleanStmt = p1.replace(/\b(Apakah|Bagaimanakah|Manakah|Mengapakah|Siapakah)\s+/gi, '').trim();
+      return `${cleanStmt}.\n\n\t${p2}`;
+    });
+
+    processedText = processedText.replace(/^(\d+\.[\t\s]+[^\n\?]+\.)[\t\s]+((?:Apakah|Bagaimanakah|Manakah|Mengapakah|Siapakah|Pilih|Pernyataan|Kombinasi|Langkah|Antara)[^\n\?]+\?)(?=\s*\n+[\t\s]*i\.)/gmi, "$1\n\n\t$2");
+  }
+
   const langLower = (language || "").toLowerCase();
   const isArabic = langLower.includes("arab") || langLower.includes("arabic");
   const isEnglish = langLower.includes("english") || langLower.includes("inggeris");
@@ -155,14 +180,10 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
   if (questionType === "objektif" || questionType === "true_false") {
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i];
-      // Jika terjumpa baris nombor soalan dan ada tanda soal
       if (/^\d+\.\s+/.test(line) && line.includes('?')) {
         let j = i + 1;
-        // Cari baris teks seterusnya yang tidak kosong
         while(j < lines.length && lines[j].trim() === '') j++;
-        // Jika baris seterusnya BUKAN pilihan roman/abcd, dan ia ada tanda soal juga (Double Question Detected)
         if (j < lines.length && lines[j].includes('?') && !/^[i|v|x]+\./i.test(lines[j]) && !/^[A-D][\.\)]/i.test(lines[j])) {
-          // Buang bahagian soalan dari baris nombor supaya tinggal penyata sahaja
           const cleanLine = line.replace(/\s*(?:Apakah|Bagaimanakah|Manakah|Mengapakah|Siapakah|What|How|Which|كيف|ما|لماذا)[^?]*\?/gi, '.').replace(/\.+$/, '.');
           lines[i] = cleanLine;
         }
@@ -218,10 +239,8 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
     let line = lines[i];
 
     if (/^\d+\.\s+/.test(line)) {
-      // Ditambah "yang dimaksudkan" ke dalam regex ini supaya pengecualian berlaku 
       const isNounQuestion = /Apakah\s+(tujuan|maksud|definisi|elemen|faktor|fungsi|komponen|pernyataan|konsep|sifat|kesan|cabaran|peranan|kepentingan|aspek|yang\s+dimaksudkan)/i.test(line);
 
-      // Rawak prefix HANYA jika ia tiada dalam pengecualian isNounQuestion
       if (line.includes("Apakah ") && !isNounQuestion && Math.random() > 0.6) {
         const randomPrefix = diverseQuestionPrefixes[Math.floor(Math.random() * diverseQuestionPrefixes.length)];
         lines[i] = line.replace(/Apakah\s+/gi, `${randomPrefix} `);
@@ -230,7 +249,6 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
   }
 
   let finalResult = lines.join("\n");
-  // Final Cleanup keselamatan untuk memastikan sisa frasa lewah dihilangkan sepenuhnya
   finalResult = finalResult.replace(/(menggambarkan|berkenaan)\s+(?:yang\s+)?dimaksudkan\s+dengan/gi, "$1 maksud");
 
   return finalResult;
@@ -277,6 +295,7 @@ export async function POST(req: NextRequest) {
         schemaPrompt = `أنت خبير في إعداد نموذج الإجابة لامتحانات جامعة UiTM.
 قدم نموذج الإجابة كامل وفقط للأسئلة الموجودة في ورقة الأسئلة أدناه (${language}).
 1. إذا كانت الورقة تحتوي على أسئلة اختيار من متعدد فقط: اذكر رقم السؤال وحرف الإجابة فقط العمودية (مثال: 1. A).
+
 2. إذا كانت هناك أسئلة مقالية: أعد كتابة نص السؤال الأصلي قبل تقديم الإجابة في شكل نقاط مع توزيع الدرجات.
 ورقة الأسئلة:
 ${fullQuestions}`;
@@ -284,6 +303,7 @@ ${fullQuestions}`;
         schemaPrompt = `You are a UiTM University Examination Examiner.
 Provide a COMPLETE ANSWER SCHEME ONLY for the questions present in the QUESTION PAPER below (${language}).
 1. IF THE PAPER CONTAINS OBJECTIVE / TRUE-FALSE: State ONLY the question number and answer letter vertically (e.g., 1. A).
+
 2. IF ESSAY QUESTIONS ARE PRESENT: REPEAT THE ORIGINAL QUESTION STATEMENT before providing point-form answers with marks.
 QUESTION PAPER:
 ${fullQuestions}`;
@@ -291,6 +311,7 @@ ${fullQuestions}`;
         schemaPrompt = `Anda adalah Pemeriksa Kertas Peperiksaan UiTM. 
 Sediakan SKEMA JAWAPAN LENGKAP HANYA bagi soalan yang wujud dalam KERTAS SOALAN di bawah (${language}).
 1. JIKA KERTAS SOALAN HANYA ADA OBJEKTIF / BENAR-SALAH: HANYA nyatakan nombor soalan dan abjad jawapan (Contoh: 1. A).
+
 2. JIKA ADA SOALAN ESEI: WAJIB MENYERTAKAN SEMULA SOALAN ASAL sebelum memberikan skema jawapan dalam bentuk POINT (Bullet) berserta markah.
 KERTAS SOALAN:
 ${fullQuestions}`;
@@ -300,7 +321,7 @@ ${fullQuestions}`;
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: aiModel || "gpt-4o-mini",
+          model: aiModel === "gpt-4o" ? "gpt-4o" : "gpt-4o-mini",
           messages: [{ role: "system", content: schemaPrompt }],
           temperature: 0.1
         })
@@ -437,14 +458,18 @@ ${fullQuestions}`;
         } else if (beranak > 0) {
           beranakRuleNoteAr = `\nتنبيه هام جداً لترتيب وكمية الأسئلة (يجب الالتزام به حرفياً):
 - عدد الأسئلة العادية: ${biasaCount} أسئلة بالضبط. (الأسئلة المرقمة من 1 إلى ${biasaCount} يجب أن تكون أسئلة عادية فقط).
+
 - عدد الأسئلة المركبة: ${beranak} أسئلة بالضبط. (الأسئلة المرقمة من ${biasaCount + 1} إلى ${count} يجب أن تكون أسئلة مركبة وتستخدم أرقام رومانية).
+
 لا تقم بتغيير هذه الكميات!`;
         }
 
         formatInstructions = `
 متطلبات العدد الصارمة:
 - إجمالي الأسئلة: ${count} أسئلة بالضبط (مرقمة من 1 إلى ${count}).
+
 - تحذير حرج: توقف عن التوليد فوراً بعد السؤال رقم ${count}.
+
 ${beranakRuleNoteAr}
 
 خريطة التوزيع الصارمة (يجب الالتزام بها 100% لكل سؤال):
@@ -452,11 +477,14 @@ ${bloomMappingAr}
 
 تحذير صارم لهيكل الأسئلة الموضوعية:
 1. يجب توفير خيارات الإجابة: يجب أن يحتوي كل سؤال موضوعي على 4 خيارات للإجابة (A، B، C، D). لا تقم أبداً بإنشاء سؤال بدون خيارات إجابة!
+
 2. لا تضع سؤالين في رقم واحد. استخدم علامة استفهام واحدة (?) لكل سؤال.
 3. لأسئلة C1 و C2، يُمنع منعاً باتاً استخدام عبارة تقريرية في البداية. ابدأ مباشرة بسؤال مباشر.
 
 تعليمات الأسئلة العادية:
 - قاعدة المحاذاة: يجب وضع Tab (\\t) واحد مباشرة بعد رقم السؤال، و Tab (\\t) واحد قبل جميع الخيارات.
+- يمنع استخدام خيار "جميع ما سبق" كخيار D.
+
 مثال للأسئلة العادية (C1/C2 - لا توجد عبارة تقريرية):
 1.\tما هو الهدف الرئيسي من الفلسفة؟
 
@@ -468,12 +496,9 @@ ${bloomMappingAr}
 
 تعليمات الأسئلة المركبة:
 - السطر الأول الذي يحتوي على رقم السؤال يجب أن يكون عبارة تقريرية فقط وتنتهي بنقطة (.). لا تضع علامة استفهام (؟) في هذا السطر أبداً!
+
 - ثم، اترك سطراً فارغاً واكتب السؤال الفعلي. يجب أن يكون السؤال مكتملاً.
 
-[مثال خاطئ - لا تفعل هذا أبداً]:
-2. علم الفلك مهم. ما هو تطبيقه؟ (خاطئ: يحتوي على علامة استفهام في السطر الأول)
-
-ما هو التطبيق المناسب؟ (خاطئ: تكرار السؤال مرتين)
 
 [مثال صحيح - يجب اتباعه]:
 2.\tيُعتبر الإجماع المصدر الثالث من مصادر التشريع الإسلامي.
@@ -493,6 +518,7 @@ ${bloomMappingAr}
       } else if (questionType === "true_false") {
         formatInstructions = `صيغة صح أم خطأ (${count} أسئلة). 
 - تحذير حرج: توقف عن التوليد فوراً بعد السؤال رقم ${count}.
+
 ${bloomMappingAr}
 مثال:
 1.\tيُعتبر القياس من الأدلة المتفق عليها عند جميع العلماء.
@@ -502,11 +528,13 @@ ${bloomMappingAr}
       } else {
         formatInstructions = `صيغة الأسئلة المقالية (${count} أسئلة). 
 - تحذير حرج: توقف عن التوليد فوراً بعد السؤال رقم ${count}.
+
 ${bloomMappingAr}
 ${bloomVerbsInstruction}
 
 قواعد المقال:
 1. يجب أن يبدأ السؤال الرئيسي (رقم 1 ، 2 ...) ببيان / جملة تقريرية كاملة. يُمنع منعاً باتاً بدء السؤال الرئيسي بكلمة أمر أو سؤال!
+
 2. تُستخدم أفعال بلوم فقط في الأسئلة الفرعية ('a.' و 'b.').
 
 مثال:
@@ -526,14 +554,18 @@ ${bloomVerbsInstruction}
         } else if (beranak > 0) {
           beranakRuleNoteEng = `\nCRITICAL ORDER AND QUANTITY WARNING (YOU MUST STRICTLY FOLLOW THIS):
 - REGULAR QUESTIONS AMOUNT: Exactly ${biasaCount} questions. (Question numbers 1 to ${biasaCount} MUST be REGULAR objective questions).
+
 - BRANCHED QUESTIONS AMOUNT: Exactly ${beranak} questions. (Question numbers ${biasaCount + 1} to ${count} MUST be BRANCHED objective questions with roman numerals).
+
 DO NOT change these exact amounts!`;
         }
 
         formatInstructions = `
 STRICT QUANTITY REQUIREMENT:
 - TOTAL QUESTIONS: EXACTLY ${count} QUESTIONS.
+
 - CRITICAL WARNING: STOP GENERATING IMMEDIATELY AFTER QUESTION ${count}.
+
 ${beranakRuleNoteEng}
 
 STRICT BLOOM'S TAXONOMY INDEX MAPPING:
@@ -541,14 +573,18 @@ ${bloomMappingEn}
 
 STRICT OBJECTIVE STRUCTURE WARNING (MUST READ):
 1. MUST HAVE OPTIONS: Every objective question MUST have exactly 4 answer options (A, B, C, and D). NEVER generate a question without answer options!
+
 2. NO DOUBLE QUESTIONS: DO NOT ask two separate questions (two question marks '?') in the same item.
 3. C1 & C2 QUESTIONS: DO NOT use declarative statements for C1 and C2. You MUST start directly with the question (e.g., "What is...", "How does...").
 4. C3 TO C6 QUESTIONS: You are allowed to use a short statement before the question.
-5. PARAGRAPH SPACING (CRITICAL): For Regular Questions, if using a statement, it MUST be merged with the question on the SAME line (NO ENTER). BUT for Branched Questions, the statement and the question MUST be separated by EXACTLY ONE BLANK LINE (ENTER)!
+5. PARAGRAPH SPACING (CRITICAL): For Regular Questions, write the question stem ending with '?'. THEN LEAVE ONE BLANK LINE (ENTER) and indent Option A with 1 TAB (\\t). NEVER place Option A on the same line as the question!
 
 REGULAR OBJECTIVE INSTRUCTIONS:
-- For regular objective questions, DO NOT leave a blank line between the statement and the question. Keep them in the exact same paragraph.
-- You MUST leave exactly ONE BLANK LINE before starting the A, B, C, D options.
+- Line 1: Question Number + Question Stem (ending with ?).
+- NO "ALL OF THE ABOVE": You are STRICTLY FORBIDDEN to use "All of the above" or "None of the above" as option D in regular single questions. Option D MUST be a valid factual distractor.
+- LEAVE ONE BLANK LINE (ENTER).
+- Options MUST start on new lines indented with 1 TAB (\\t): \\tA. ..., \\tB. ..., \\tC. ..., \\tD. ...
+
 EXAMPLE for C3-C6 (Statement and Question merged):
 1.\tIntegration serves as a foundational concept. How is this concept applied in advanced calculus?
 
@@ -559,13 +595,11 @@ EXAMPLE for C3-C6 (Statement and Question merged):
 \t[C3] [CO2]
 
 BRANCHED OBJECTIVE INSTRUCTIONS:
-- The very first line (the numbered line) MUST ONLY be a DECLARATIVE FACTUAL STATEMENT ending with a full stop (.). DO NOT put a question mark (?) or question words on this first line!
-- Then, LEAVE A BLANK LINE (Press Enter), and ask ONE formally complete question based on the statement.
-
-[WRONG EXAMPLE - DO NOT DO THIS]:
-2. Astronomy is important. What is its application? (WRONG: Has a question mark on the first line)
-
-What is the relevant application? (WRONG: Asking question twice)
+- Line 1: Factual Statement / Scenario ending with a period (.). DO NOT put a question mark (?) or question words on this first line!
+- Line 2: LEAVE A BLANK LINE (ENTER), and type 1 TAB (\\t) followed by ONLY ONE MAIN QUESTION STATEMENT (e.g. "\\tWhich of the following represents the most accurate combination?").
+- Line 3: LEAVE A BLANK LINE (ENTER), and type 1 TAB (\\t) followed by Roman Numeral Items (\\ti., \\tii., \\tiii., \\tiv.).
+- Line 4: Options (\\tA., \\tB., \\tC., \\tD.). (Here, "D. All of the above" IS allowed).
+- Line 5: JSU Tag.
 
 [CORRECT EXAMPLE - MUST FOLLOW]:
 2.\tThe function f(x) = x^2 represents a parabola.
@@ -585,6 +619,7 @@ What is the relevant application? (WRONG: Asking question twice)
       } else if (questionType === "true_false") {
         formatInstructions = `Format True / False (${count} questions). 
 - CRITICAL WARNING: STOP GENERATING IMMEDIATELY AFTER QUESTION ${count}.
+
 ${bloomMappingEn}
 EXAMPLE:
 1.\tThe derivative of a constant function is always zero.
@@ -594,11 +629,13 @@ EXAMPLE:
       } else {
         formatInstructions = `Format Essay (${count} questions).
 - CRITICAL WARNING: STOP GENERATING IMMEDIATELY AFTER QUESTION ${count}.
+
 ${bloomMappingEn} 
 ${bloomVerbsInstruction}
 
 RULES FOR ESSAY:
 1. The main stem (number 1, 2...) MUST ONLY be a DECLARATIVE FACTUAL STATEMENT ending with a full stop (.). DO NOT start the main stem with a question or command word, and NEVER end it with a question mark (?)!
+
 2. Bloom's command verbs MUST ONLY be used in the sub-questions ('a.' and 'b.').
 
 EXAMPLE:
@@ -618,53 +655,66 @@ EXAMPLE:
         } else if (beranak > 0) {
           beranakRuleNote = `\nAMARAN KETAT SUSUNAN & KUANTITI SOALAN (ANDA WAJIB PATUH 100%):
 - JUMLAH SOALAN BIASA: Tepat ${biasaCount} soalan. (Soalan nombor 1 hingga ${biasaCount} MESTILAH SOALAN BIASA SAHAJA tanpa item roman).
+
 - JUMLAH SOALAN BERANAK: Tepat ${beranak} soalan. (Soalan nombor ${biasaCount + 1} hingga ${count} MESTILAH SOALAN BERANAK beritem roman i, ii, iii, iv).
+
 DILARANG menambah atau mengurangkan kuantiti ini!`;
         }
 
         formatInstructions = `
 PENGATURAN KUANTITI SOALAN (AMARAN SANGAT MUTLAK):
 - JUMLAH KESELURUHAN SOALAN: TEPAT ${count} SOALAN SAHAJA.
+
 - AMARAN KERAS: ANDA WAJIB BERHENTI MENJANA SEBAIK SAHAJA SOALAN KE-${count} SELESAI!
+
 ${beranakRuleNote}
 
 PETA SUSUNAN ARAS BLOOM & RUBRIK CO (WAJIB DIPATUHI 100%):
 ${bloomMappingMs}
 
 AMARAN KERAS STRUKTUR & TATABAHASA SOALAN OBJEKTIF (WAJIB BACA):
-1. WAJIB ADA PILIHAN JAWAPAN (A, B, C, D): Setiap soalan yang dijana WAJIB mempunyai tepat 4 pilihan jawapan. JANGAN SESEKALI tinggalkan soalan tanpa memberikan pilihan jawapan! Ini adalah soalan objektif!
-2. LARANGAN DUA SOALAN: DILARANG SAMA SEKALI terdapat DUA ayat pertanyaan (dua tanda soal '?') dalam satu nombor soalan yang sama. Hanya SATU tanda soal dibenarkan.
-3. GAYA SOALAN C1 & C2: DILARANG menggunakan sebarang ayat penyata (stimulus) di awal soalan bagi aras C1 dan C2. WAJIB terus gunakan soalan langsung (Direct Question) seperti "Apakah...", "Bagaimanakah...", "Manakah...".
-4. GAYA SOALAN C3 HINGGA C6: DIBENARKAN memulakan soalan dengan SATU ayat penyata ringkas, diikuti dengan persoalan. (Guna dengan kadar terkawal).
-5. PEMISAHAN AYAT (SANGAT PENTING): Untuk Soalan Biasa, jika ada penyata, ia MESTI ditaip bersambung dengan soalan dalam baris yang sama (TIADA ENTER). TETAPI, untuk Soalan Beranak, ayat penyata di baris pertama WAJIB DIPISAHKAN daripada ayat soalan di baris berikutnya dengan SATU BARIS KOSONG (ENTER)!
-6. "Siapakah" HANYA KHUSUS untuk orang atau tokoh. DILARANG menggunakan "Siapakah" untuk benda atau konsep.
-7. DILARANG menggunakan soalan tergantung seperti "dalam artikel ini" atau "dalam petikan ini".
-8. HARAM MENGGUNAKAN IMBUHAN "-lah": DILARANG SAMA SEKALI menggunakan perkataan berimbuhan seperti "Analisislah", "Jelaskanlah", "Bincangkanlah". Soalan objektif mestilah bertanyakan soalan secara terus.
+1. WAJIB ADA PILIHAN JAWAPAN (A, B, C, D): Setiap soalan yang dijana WAJIB mempunyai tepat 4 pilihan jawapan.
+2. DILARANG SAMA SEKALI DUA SOALAN TERGABUNG: DILARANG mengulang kata tanya dua kali (cth: 'Bagaimanakah langkah... Bagaimanakah antara berikut...'). Hanya SATU soalan utama dibenarkan per nombor soalan!
 
-ARAHAN SOALAN BIASA (TUNGGAL):
-- SOALAN MESTI BERCANTUM: Ayat penyata dan ayat pertanyaan mesti berada dalam satu perenggan yang sama.
-- WAJIB TINGGALKAN SATU BARIS KOSONG (SELANG SEBARIS) sebelum bermulanya pilihan jawapan A, B, C, D.
+3. GAYA SOALAN C1 & C2: DILARANG menggunakan sebarang ayat penyata (stimulus) di awal soalan bagi aras C1 dan C2. WAJIB terus gunakan soalan langsung (Direct Question).
+4. GAYA SOALAN C3 HINGGA C6: DIBENARKAN memulakan soalan dengan SATU ayat penyata ringkas, diikuti dengan persoalan. (Guna dengan kadar terkawal).
+5. "Siapakah" HANYA KHUSUS untuk orang atau tokoh. DILARANG menggunakan "Siapakah" untuk benda atau konsep.
+6. DILARANG menggunakan soalan tergantung seperti "dalam artikel ini" atau "dalam petikan ini".
+7. HARAM MENGGUNAKAN IMBUHAN "-lah": DILARANG SAMA SEKALI menggunakan perkataan berimbuhan seperti "Analisislah", "Jelaskanlah". Soalan objektif mestilah bertanyakan soalan secara terus.
+
+ARAHAN SOALAN BIASA (LANGSUNG / TUNGGAL):
+- SOALAN MESTI BERCANTUM: Ayat penyata dan ayat pertanyaan mesti berada dalam satu perenggan yang sama terus di sebelah nombor soalan.
+- HARAM PENGGUNAAN JAWAPAN D YANG MUDAH DITEKA: DILARANG KERAS menggunakan pilihan "Semua di atas", "Tiada satu pun di atas", atau "A dan B betul" pada pilihan jawapan D bagi soalan tunggal! Pilihan D WAJIB mengandungi teks fakta distraktor yang sah.
+- SUSUNAN BARIS WAJIB:
+  Baris 1: Nombor Soalan + Ayat Penyata & Ayat Soalan (diakhiri dengan ?).
+  <ENTER JARAK / SELANG SEBARIS>
+  Baris 2: \tA. Pilihan A
+  Baris 3: \tB. Pilihan B
+  Baris 4: \tC. Pilihan C
+  Baris 5: \tD. Pilihan D
+  Baris 6: \t[C...] [CO...]
+
+AMARAN MUTLAK: PILIHAN JAWAPAN 'A.' WAJIB BERMULA DI BARIS BAHARU SELEPAS SELANG SEBARIS (ENTER) BERSERTA 1 TAB (\t)! DILARANG KERAS MELETAKKAN PILIHAN 'A.' DI BARIS YANG SAMA DENGAN TEKS SOALAN!
+
 CONTOH LENGKAP C3-C6 (Penyata & Soalan Bercantum):
 1.\tFalsafah Pendidikan Kebangsaan menekankan aspek keseimbangan. Bagaimanakah aspek ini diterapkan dalam kurikulum sekolah?
 
 \tA. Melalui pengasingan subjek sains dan sastera
 \tB. Dengan memperkenalkan subjek pendidikan rohani
 \tC. Melalui penglibatan pelajar dalam aktiviti kokurikulum secara holistik
-\tD. Mengurangkan waktu pembelajaran teori
+\tD. Mengurangkan waktu pembelajaran teori khusus
 \t[C3] [CO2]
 
-AMARAN PALING KERAS UNTUK SOALAN BERANAK (BERLAPIS):
-- Baris PERTAMA yang bernombor (cth: "2.") WAJIB HANYA AYAT PENYATA FAKTA (Stimulus) yang diakhiri dengan titik (.).
-- DIHARAMKAN SAMA SEKALI meletakkan sebarang persoalan, kata tanya ("Apakah", "Bagaimanakah"), atau tanda soal (?) pada baris pertama ini! Jika anda letak tanda soal di baris pertama, ia adalah SALAH!
-- WAJIB TEKAN 'ENTER' (SELANG SEBARIS)!
-- Barulah kemukakan HANYA SATU soalan formal pada baris baharu.
+ARAHAN SOALAN BERANAK (BERLAPIS - WAJIB PATUH SUSUNAN KETAT):
+- Baris 1: Nombor Soalan + Ayat Penyata Fakta / Senario Lengkap diakhiri dengan TITIK (.) SAHAJA. DILARANG KERAS meletakkan kata tanya ('Apakah'/'Bagaimanakah') atau tanda soal (?) di Baris 1 ini!
+- <ENTER JARAK / SELANG SEBARIS> + DITAIP 1 TAB (\\t) + SATU AYAT SOALAN UTAMA (cth: "\\tApakah antara berikut yang paling tepat...", "\\tApakah langkah yang perlu diambil...").
+- <ENTER JARAK / SELANG SEBARIS> + DITAIP 1 TAB (\\t) + ITEM ROMAN (\\ti. ..., \\tii. ..., \\tiii. ..., \\tiv. ...).
+- Pilihan Jawapan A, B, C, D (\\tA. ..., \\tB. ..., \\tC. ..., \\tD. ...). (Bagi soalan beranak, pilihan gabungan "D. Semua di atas" adalah DIBENARKAN).
+- Tag JSU (\\t[C...] [CO...]).
 
-[CONTOH SALAH - JANGAN BUAT BEGINI!]:
-2. Astronomi penting. Apakah aplikasinya? (SALAH: Ada tanda soal di baris pertama)
+AMARAN KERAS: DILARANG MENGGABUNGKAN AYAT SOALAN UTAMA KE BARIS PERTAMA SOALAN BERANAK ATAU MENGULANGNYA BERSAMA AYAT PENYATA! AYAT SOALAN UTAMA WAJIB BERADA DI BARIS KEDUA BERSERTA 1 TAB (\\t) DAN MEMPUNYAI SELANG SEBARIS (ENTER) SEBELUM DAN SELEPASNYA!
 
-Apakah aplikasi yang relevan? (SALAH: Soalan berulang dua kali)
-
-[CONTOH BETUL - WAJIB IKUT]:
+[CONTOH BETUL SOALAN BERANAK - WAJIB PATUH 100%]:
 2.\tPendidikan yang berteraskan Falsafah Pendidikan Kebangsaan perlu mengambil kira pelbagai aspek penting.
 
 \tManakah antara berikut merupakan aspek yang paling utama bagi mencapai hasrat tersebut?
@@ -672,7 +722,7 @@ Apakah aplikasi yang relevan? (SALAH: Soalan berulang dua kali)
 \ti. Kurikulum yang inklusif
 \tii. Pengajaran bahasa ibunda
 \tiii. Pendidikan moral
-\tiv. Aktiviti sukan
+\tiv. Sistem penaksiran holistik
 
 \tA. i dan ii
 \tB. ii dan iii
@@ -682,6 +732,7 @@ Apakah aplikasi yang relevan? (SALAH: Soalan berulang dua kali)
       } else if (questionType === "true_false") {
         formatInstructions = `Format Benar / Salah (${count} soalan). 
 - AMARAN KERAS: ANDA WAJIB BERHENTI MENJANA SEBAIK SAHAJA SOALAN KE-${count} SELESAI.
+
 ${bloomMappingMs}
 CONTOH WAJIB:
 1.\tAspirasi negara bangsa adalah penting.
@@ -691,11 +742,13 @@ CONTOH WAJIB:
       } else {
         formatInstructions = `Format Esei (${count} soalan). 
 - AMARAN KERAS: ANDA WAJIB BERHENTI MENJANA SEBAIK SAHAJA SOALAN KE-${count} SELESAI.
+
 ${bloomMappingMs}
 ${bloomVerbsInstruction}
 
 PERATURAN FORMAT ESEI & TATABAHASA (AMARAN KERAS MUTLAK):
 1. KEPALA SOALAN (sebelah nombor 1, 2, 3...) WAJIB merupakan AYAT PENYATA LENGKAP (Fakta/Stimulus) yang DITAMATKAN DENGAN TITIK (.). DILARANG SAMA SEKALI memulakan kepala soalan dengan kata perintah, dan DILARANG mengakhirinya dengan tanda soal (?)!
+
 2. KATA PERINTAH BLOOM HANYA BOLEH DIGUNAKAN PADA ANAK SOALAN ('a.' dan 'b.') SAHAJA. (Pastikan ia adalah ayat perintah murni bebas imbuhan Me, Meng, Men - Contoh yang betul: "Bincangkan", "Huraikan", "Nilaikan", "Rekaciptakan").
 
 CONTOH STRUKTUR ESEI WAJIB PATUH:
@@ -707,14 +760,33 @@ CONTOH STRUKTUR ESEI WAJIB PATUH:
       }
     }
 
+    // SUNTIKAN ELEMEN SITUASI & TIGA PERATURAN EMAS DISTRAKTOR
+    const SUNTIKAN_SITUASI = `
+ARAHAN ELEMEN SITUASI / SENARIO & KUALITI DISTRAKTOR (WAJIB PATUH 100%):
+1. ELEMEN SITUASI / SENARIO: Anda WAJIB menggubal sekurang-kurangnya 50% daripada jumlah soalan dalam BENTUK SITUASI REKAAN REALISTIK, SENARIO WATAK (seperti "Ahmad menghadapi situasi...", "Syarikat ABC dalam senario..."), ATAU KAJIAN KES APLIKASI PRAKTIKAL.
+2. TIGA (3) PERATURAN EMAS DISTRAKTOR (PILIHAN JAWAPAN SALAH):
+   - ATURAN KONSEP RAKAN (PEER CONCEPTS): Distraktor WAJIB datang dari kategori domain/topik akademik yang sama dengan jawapan betul. Jika jawapan betul adalah istilah Arab, distraktor lain WAJIB istilah Arab dari silibus. Jika teori, distraktor mesti nama teori lain. HARAM mencampuradukkan bidang/kategori secara rawak.
+   - SINTAKSIS SELARI (PARALLEL SYNTAX): Keempat-empat pilihan (A, B, C, D) WAJIB bermula dengan struktur tatabahasa yang sama dan mempunyai ukuran kepanjangan ayat yang setara. (Contoh: Jika A bermula dengan kata kerja "Membangunkan", maka B, C, dan D JUGA WAJIB bermula dengan kata kerja berimbuhan "Me-").
+   - LARAS BAHASA AKADEMIK TINGGI: HARAM menggunakan frasa penolak murahan yang mudah diteka seperti "tidak", "bukan", "mengabaikan", "semata-mata", "sahaja", "tanpa", atau "semua di atas" untuk soalan tunggal. Distraktor mestilah dimanipulasi dari silibus (cross-concept) supaya berbunyi positif, logik, dan sangat munasabah (plausible) bagi mengelirukan pelajar.
+3. EJAAN: Pastikan ejaan perkataan etika ditaip dengan betul ("etika", BUKAN "ethika").`;
+
     let systemPrompt = "";
     if (isArabic) {
       systemPrompt = `أنت خبير في إعداد الامتحانات الجامعية (UiTM) لمادة ${courseCode} - ${courseName}.
 شرط اللغة الصارم: يجب عليك إنشاء جميع الأسئلة والنصوص والخيارات والفقرات بنسبة 100% باللغة العربية.
 
 قاعدة الربط بالنص المرفق (STRICT CONTEXT GROUNDING):
-1. يجب عليك إنشاء الأسئلة بناءً على النص المرفق أدناه فقط بنسبة 100%.
+1. يجب عليك إنشاء الأسئلة بناءً على النص المرفق أدناه فقط بنسبة 100%. (استثناء: يسمح لك بإنشاء أسماء شخصيات أو مواقف خيالية من أجل أسئلة السيناريو التطبيقية).
+
 2. يُمنع منعاً باتاً اختراع أو إدخال أي مواضيع عامة خارج نطاق النص المرفق.
+
+عناصر السيناريو وجودة المشتتات (إلزامي 100%):
+1. عناصر السيناريو: يجب صياغة 50% على الأقل من الأسئلة كسيناريوهات واقعية أو دراسات حالة عملية (مثل "يواجه أحمد موقفاً...").
+2. القواعد الذهبية الثلاث للمشتتات (الخيارات الخاطئة):
+   - قاعدة المفاهيم النظيرة: يجب أن تنتمي المشتتات إلى نفس الفئة تماماً مثل الإجابة الصحيحة. إذا كانت الإجابة مصطلحاً، يجب أن تكون الخيارات الأخرى مصطلحات مشابهة من المنهج.
+   - البنية النحوية المتوازية: يجب أن تبدأ جميع الخيارات (A, B, C, D) بنفس البنية النحوية وأن تكون متقاربة في الطول. (مثال: إذا بدأ الخيار A بفعل مضارع، يجب أن تبدأ الخيارات الأخرى بفعل مضارع).
+   - لغة أكاديمية عالية: يُمنع منعاً باتاً استخدام كلمات نفي بسيطة وسهلة التخمين مثل "لا"، "فقط"، "تجاهل". يجب أن تكون المشتتات منطقية وإيجابية ومربكة للطالب غير الدارس.
+3. الإملاء: تأكد من كتابة الكلمات بشكل صحيح.
 
 ${RUBRIK_AKADEMIK}
 
@@ -723,6 +795,7 @@ ${formatInstructions}
 
 قواعد مطلقة:
 1. وسم JSU الكامل يجب وضعه في السطر الأخير لكل سؤال ويكون محاذى بـ Tab (\\t). (وسمين فقط: مستويات بلوم و CO).
+
 2. يُمنع استخدام النجوم (* أو **).
 3. يمنع منعا باتا كتابة تعليقات أو تبريرات أو شرح لخياراتك داخل ورقة الأسئلة. فقط اكتب الأسئلة والخيارات والوسم النهائي.
 4. للأسئلة الموضوعية: يجب عليك توفير 4 خيارات (A, B, C, D) لكل سؤال. لا تترك أي سؤال بدون خيارات.
@@ -735,8 +808,17 @@ ${finalContext}`;
 CRITICAL LANGUAGE MANDATE: You MUST generate ALL questions, statements, options, and text 100% ENTIRELY IN ENGLISH.
 
 STRICT CONTEXT GROUNDING RULE:
-1. You MUST generate questions 100% EXCLUSIVELY and STRICTLY based on the facts present in the COURSE NOTES / CONTEXT provided below.
+1. You MUST generate questions 100% EXCLUSIVELY and STRICTLY based on the facts present in the COURSE NOTES / CONTEXT provided below. (Exception: You are allowed to invent scenario situations or character names for practical application questions).
+
 2. DO NOT hallucinate or introduce outside general knowledge facts!
+
+SITUATIONAL ELEMENTS & STRICT DISTRACTOR QUALITY (100% MANDATORY):
+1. SITUATIONAL ELEMENTS: You MUST generate at least 50% of the questions as REALISTIC SCENARIOS, CHARACTER-BASED SITUATIONS (e.g., "Ahmad faces a situation..."), OR PRACTICAL CASE STUDIES.
+2. THE 3 GOLDEN RULES OF DISTRACTORS (WRONG OPTIONS):
+   - PEER CONCEPTS RULE: Distractors MUST belong to the exact same domain category as the correct answer. If the correct answer is a specific Arabic term or theory, all distractors MUST be Arabic terms or theories from the syllabus. DO NOT mix random categories.
+   - PARALLEL SYNTAX: All 4 options (A, B, C, D) MUST start with the exact same grammatical structure and have similar lengths. (e.g., If A starts with a Gerund/Verb like "Developing", then B, C, and D MUST also start with similar Gerunds/Verbs).
+   - HIGH ACADEMIC REGISTER: YOU ARE STRICTLY FORBIDDEN from using cheap, obvious negative words like "not", "ignore", "only", "solely", "without". Distractors must use cross-concept manipulation to sound highly academic, positive, logical, and extremely plausible.
+3. SPELLING: Ensure the word "etika" is spelled correctly (NOT "ethika") if used in Malay context.
 
 ${RUBRIK_AKADEMIK}
 
@@ -745,6 +827,7 @@ ${formatInstructions}
 
 ABSOLUTE RULES:
 1. FULL JSU TAG MUST be placed at the very bottom line of every question and MUST be indented with 1 tab (\\t). (EXACTLY 2 TAGS: Bloom and CO).
+
 2. DO NOT use bullet points (* or **).
 3. STRICT PROHIBITION: DO NOT write any comments, rationale, justifications, or Bloom's explanations inside the question paper. ONLY output the questions, options, and the final tag.
 4. FOR OBJECTIVE QUESTIONS: You MUST provide 4 options (A, B, C, D) for every single question. NEVER leave a question without options.
@@ -756,8 +839,11 @@ ${finalContext}`;
       systemPrompt = `Anda adalah Pakar Penggubal Soalan Peperiksaan Universiti (UiTM) bagi ${courseCode} - ${courseName} dalam ${language}.
 
 ARAHAN PENGIKATAN DOKUMEN / NOTA (STRICT CONTEXT GROUNDING MUTLAK):
-1. Anda WAJIB menggubal soalan 100% BERDASARKAN DAN BERSUMBERKAN TEKS NOTA KURSUS di bawah SAHAJA.
+1. Anda WAJIB menggubal soalan 100% BERDASARKAN DAN BERSUMBERKAN TEKS NOTA KURSUS di bawah SAHAJA. (Pengecualian: Anda DIBENARKAN mencipta nama watak atau situasi rekaan HANYA untuk tujuan membina soalan berbentuk senario/Kajian Kes, asalkan FAKTA JAWAPAN masih bersumberkan nota).
+
 2. DILARANG SAMA SEKALI mereka-reka atau membawa masuk fakta am di luar kandungan dokumen!
+
+${SUNTIKAN_SITUASI}
 
 ${RUBRIK_AKADEMIK}
 
@@ -766,6 +852,7 @@ ${formatInstructions}
 
 PERATURAN MUTLAK KERTAS SOALAN:
 1. TAG JSU LENGKAP WAJIB ada di baris akhir setiap soalan dan WAJIB di-tab (\\t). Rujuk Peta Susunan yang diberi. (TEPAT 2 TAG SAHAJA: Bloom dan CO).
+
 2. DILARANG menggunakan tanda bintik (* atau **).
 3. AMARAN KERAS: DILARANG SAMA SEKALI menulis ulasan, rasional, justifikasi rubrik atau sebarang nota penerangan di dalam kertas soalan! Anda hanya dibenarkan mencetak TEKS SOALAN, PILIHAN JAWAPAN, dan TAG JSU SAHAJA.
 4. BUKAN SOALAN SUBJEKTIF: Ini adalah soalan Objektif. Anda WAJIB menjana tepat 4 pilihan jawapan (A, B, C, D) bagi SETIAP soalan sebelum meletakkan tag JSU.
@@ -779,9 +866,9 @@ ${finalContext}`;
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: aiModel || "gpt-4o-mini",
+        model: aiModel === "gpt-4o" ? "gpt-4o" : "gpt-4o-mini",
         messages: [{ role: "system", content: systemPrompt }],
-        temperature: 0.1 
+        temperature: 0.35
       })
     });
 
