@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import PDFParser from "pdf2json";
-import { Buffer } from 'buffer'; // WAJIB: Mencegah ralat kehilangan Buffer di Vercel
+import { Buffer } from 'buffer';
 
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic'; // WAJIB: Mengelak ralat keliru cache Next.js
-export const maxDuration = 60; 
+export const dynamic = 'force-dynamic';
+export const maxDuration = 120; // Tingkatkan kepada 120 saat untuk pemprosesan memori vektor yang besar
+
+// PENTING: Arahkan Next.js supaya tidak memotong (reset) sambungan bagi fail bersaiz besar.
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '50mb', // Benarkan saiz fail sehingga 50MB
+    },
+    responseLimit: '50mb',
+  },
+};
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -19,7 +29,7 @@ async function getEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!apiKey) throw new Error("OPENAI_API_KEY tidak dijumpai.");
 
   const results: number[][] = [];
-  const batchSize = 20; // Hantar 20 perenggan serentak untuk kelajuan kilat
+  const batchSize = 10; // Turunkan sikit ke 10 supaya API OpenAI tidak menolak permintaan akibat payload terlalu besar
 
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
@@ -39,11 +49,11 @@ async function getEmbeddingsBatch(texts: string[]): Promise<number[][]> {
 
     if (!response.ok) {
       const errText = await response.text();
+      console.error("OpenAI Error:", errText);
       throw new Error(`OpenAI Error: ${errText.substring(0, 100)}`);
     }
 
     const data = await response.json();
-    // Susun semula vektor mengikut urutan asal perenggan
     const sortedEmbeddings = data.data
       .sort((a: any, b: any) => a.index - b.index)
       .map((d: any) => d.embedding);
@@ -173,8 +183,12 @@ export async function POST(req: NextRequest) {
         embedding: embeddings[index]
       }));
 
-      const { error: chunkError } = await supabase.from('document_chunks').insert(chunkRows);
-      if (chunkError) throw new Error(`Gagal menyimpan data vektor: ${chunkError.message}`);
+      // Masukkan pecahan vektor ini ke pangkalan data menggunakan batching 500 baris serentak untuk keselamatan pangkalan data
+      for (let i = 0; i < chunkRows.length; i += 500) {
+        const batchRows = chunkRows.slice(i, i + 500);
+        const { error: chunkError } = await supabase.from('document_chunks').insert(batchRows);
+        if (chunkError) throw new Error(`Gagal menyimpan data vektor: ${chunkError.message}`);
+      }
     }
 
     return NextResponse.json({

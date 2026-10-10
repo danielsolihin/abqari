@@ -229,8 +229,12 @@ export default function PenjanaSoalanPage() {
   const [quoteText, setQuoteText] = useState('Meningkatkan ketepatan format menggunakan seni bina modular...');
 
   const getAuthHeaders = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+    } catch (e) {
+      return {};
+    }
   };
 
   useEffect(() => {
@@ -252,11 +256,25 @@ export default function PenjanaSoalanPage() {
   useEffect(() => {
     const fetchSubjects = async () => {
       try {
-        const authHeaders = await getAuthHeaders();
-        const response = await fetch('/api/subjects', { headers: { ...authHeaders } });
-        const json = await response.json();
-        if (json.success) setSubjects(json.data);
-      } catch (error) { console.error('Ralat:', error); }
+        const { data, error } = await supabase
+          .from('subjects')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && data) {
+          setSubjects(data);
+        } else {
+          const authHeaders = await getAuthHeaders();
+          const response = await fetch('/api/subjects', { headers: { ...authHeaders } });
+          const text = await response.text();
+          const json = text ? JSON.parse(text) : {};
+          if (json && json.success && Array.isArray(json.data)) {
+            setSubjects(json.data);
+          }
+        }
+      } catch (error) { 
+        console.error('Ralat mengambil subjek:', error); 
+      }
     };
     fetchSubjects();
   }, []);
@@ -272,9 +290,18 @@ export default function PenjanaSoalanPage() {
       } else {
          setCourseCode(''); setCourseName(formatted);
       }
-      setSubjectCOs(Array.isArray(sub.co) ? sub.co : []);
+      
+      // KEMAS KINI: Format CO supaya memaparkan 'CO' sekiranya pangkalan data merekodkan 'C'
+      const rawCOs = Array.isArray(sub.co) ? sub.co : [];
+      const formattedCOs = rawCOs.map((c: any) => {
+        let str = String(c).toUpperCase().trim();
+        if (/^C\d+$/.test(str)) return str.replace('C', 'CO');
+        return str;
+      });
+      
+      setSubjectCOs(formattedCOs);
       setSubjectLOs(Array.isArray(sub.lo) ? sub.lo : []);
-      setSubjectDomains(Array.isArray(sub.domain) ? sub.domain : (sub.domain ? [sub.domain] : ['C1', 'C2', 'C3', 'P3', 'P4']));
+      setSubjectDomains(Array.isArray(sub.domain) ? sub.domain : (sub.co || ['C1', 'C2', 'C3', 'P3', 'P4']));
     }
   };
 
@@ -321,7 +348,7 @@ export default function PenjanaSoalanPage() {
 
   const renderHighlightedText = (text: string) => {
     if (!text) return null;
-    const parts = text.split(/(\\?\[\s*(?:Aras|Level|Aras Bloom|CO\d*|LO\d*|PO\d*|C\d+|P\d+|A\d+|Rujukan|Topik)[^\]]*\\?\])/gi);
+    const parts = text.split(/(\\?\[\s*(?:Aras|Level|Aras Bloom|CO\d*|CLO\d*|LO\d*|PO\d*|PLO\d*|C\d+|P\d+|A\d+|Rujukan|Topik)[^\]]*\\?\])/gi);
     return parts.map((part, index) => {
       const arasMatch = part.match(/\\?\[\s*(?:Aras(?: Bloom)?|Level):\s*C([1-6])\\?\]/i);
       if (arasMatch) {
@@ -337,11 +364,13 @@ export default function PenjanaSoalanPage() {
         }
         return <span key={index} style={{ backgroundColor: bgColor, color: textColor, fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid ${borderColor}`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part.replace(/\\/g, '')}</span>;
       }
-      if (part.match(/\[CO\d*\]/i) || part.match(/\[CO:/i)) return <span key={index} style={{ backgroundColor: '#e0f2fe', color: '#0369a1', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #7dd3fc`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part.replace(/\\/g, '')}</span>;
-      if (part.match(/\[LO\d*\]/i) || part.match(/\[PO\d*\]/i) || part.match(/\[LO:/i)) return <span key={index} style={{ backgroundColor: '#f5f3ff', color: '#6d28d9', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #c4b5fd`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part.replace(/\\/g, '')}</span>;
+      
+      if (part.match(/\[CO\d*\]/i) || part.match(/\[CO:/i) || part.match(/\[CLO\d*\]/i)) return <span key={index} style={{ backgroundColor: '#e0f2fe', color: '#0369a1', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #7dd3fc`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part.replace(/\\/g, '')}</span>;
+      if (part.match(/\[LO\d*\]/i) || part.match(/\[PO\d*\]/i) || part.match(/\[PLO\d*\]/i) || part.match(/\[LO:/i)) return <span key={index} style={{ backgroundColor: '#f5f3ff', color: '#6d28d9', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #c4b5fd`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part.replace(/\\/g, '')}</span>;
       if (part.match(/\[A[1-5]\]/i) || part.match(/\[A:/i)) return <span key={index} style={{ backgroundColor: '#ffedd5', color: '#c2410c', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #fdba74`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part.replace(/\\/g, '')}</span>;
       if (part.match(/\[P[1-7]\]/i) || part.match(/\[P:/i)) return <span key={index} style={{ backgroundColor: '#fce7f3', color: '#9d174d', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #fbcfe8`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part.replace(/\\/g, '')}</span>;
       if (part.match(/\[C[1-6]\]/i) || part.match(/\[C:/i)) return <span key={index} style={{ backgroundColor: '#ccfbf1', color: '#0f766e', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', border: `1px solid #5eead4`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part.replace(/\\/g, '')}</span>;
+      
       if (part.match(/\[Rujukan/i)) return <span key={index} style={{ backgroundColor: '#f3f4f6', color: '#374151', fontWeight: 'bold', fontStyle: 'italic', padding: '2px 6px', borderRadius: '4px', border: `1px dashed #9ca3af`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part.replace(/\\/g, '')}</span>;
       if (part.match(/\[Topik/i)) return <span key={index} style={{ backgroundColor: '#fce7f3', color: '#be185d', fontWeight: 'bold', fontStyle: 'italic', padding: '2px 6px', borderRadius: '4px', border: `1px solid #fbcfe8`, marginLeft: '3px', marginRight: '3px', fontSize: '0.8rem' }}>{part.replace(/\\/g, '')}</span>;
       
@@ -455,7 +484,7 @@ export default function PenjanaSoalanPage() {
   };
 
   // ============================================================
-  // FUNGSI PINTAR SIMPAN KE BANK SOALAN (PECAH SOALAN INDIVIDU)
+  // FUNGSI PINTAR SIMPAN KE BANK SOALAN (DENGAN ANTI-DUPLICATE FILTER)
   // ============================================================
   const handleSaveToBank = async () => {
     if (!generatedQuestions) return;
@@ -467,17 +496,55 @@ export default function PenjanaSoalanPage() {
     setIsSavingBank(true);
     
     try {
-      // 1. Bersihkan teks dan pecahkan mengikut pola nombor soalan (1., 2., 3., dll.)
+      // 1. Ambil soalan sedia ada daripada pangkalan data bagi subjek ini sahaja
+      const { data: existingQuestions, error: fetchError } = await supabase
+        .from('questions')
+        .select('question_text')
+        .eq('subject_id', selectedSubject);
+
+      if (fetchError) throw new Error(`Gagal menyemak Bank Soalan: ${fetchError.message}`);
+
+      // Fungsi normalisasi teks untuk perbandingan tepat (menghapuskan nombor, pilihan jawapan, tag JSU & format)
+      const normalizeText = (str: string) => {
+        return str
+          .replace(/^(?:\d+[\.\)]|BAHAGIAN\s+[A-Z]:?|PART\s+[A-Z]:?)\s*/gi, '') // Buang nombor soalan / tajuk bahagian
+          .replace(/\\?\[\s*(?:Aras|Level|CO\d*|CLO\d*|LO\d*|PLO\d*|PO\d*|C\d+|P\d+|A\d*)[^\]]*\\?\]/gi, '') // Buang tag JSU
+          .replace(/^[A-E]\.\s+.*$/gm, '') // Buang pilihan jawapan (A. B. C. D.) untuk elak ralat jika susunan berubah
+          .replace(/\s+/g, ' ') // Tukar ruang kosong/baris baharu berganda kepada 1 ruang
+          .trim()
+          .toLowerCase();
+      };
+
+      // Cap jari (fingerprint) soalan: ambil 100 aksara pertama penyata/kepala soalan yang sudah dibersihkan
+      const getFingerprint = (str: string) => normalizeText(str).substring(0, 100);
+
+      const existingSet = new Set(
+        (existingQuestions || []).map((q: any) => getFingerprint(q.question_text || ''))
+      );
+
+      // 2. Pecahkan soalan baharu mengikut blok penomboran
       const questionBlocks = generatedQuestions
         .split(/(?=(?:^|\n)\s*(?:BAHAGIAN|PART|الجزء)?\s*[A-Z]?:?\s*\n*\s*\d+[\.\)]\s*)/gi)
         .map((b) => b.replace(/^(?:BAHAGIAN|PART|الجزء)\s+[A-Z]:?\s*/gi, '').trim())
         .filter((b) => b.length > 5 && /^\d+[\.\)]/i.test(b));
 
-      // Jika tiada penomboran dikesan, jadikan keseluruhan teks sebagai fallback
       const finalBlocks = questionBlocks.length > 0 ? questionBlocks : [generatedQuestions.trim()];
 
-      // 2. Bina senarai rekod individu
-      const insertPayload = finalBlocks.map((block) => {
+      // 3. TAPIS SOALAN: Ambil soalan yang BELUM WUJUD sahaja
+      const newUniqueBlocks = finalBlocks.filter((block) => {
+        const fingerprint = getFingerprint(block);
+        return fingerprint.length > 5 && !existingSet.has(fingerprint);
+      });
+
+      // Jika semua soalan sudah sedia ada
+      if (newUniqueBlocks.length === 0) {
+        alert('ℹ️ Tiada soalan baharu disimpan. Semua soalan ini telah sedia ada dalam Bank Soalan bagi subjek ini!');
+        setIsSavingBank(false);
+        return;
+      }
+
+      // 4. Bina payload untuk soalan-soalan baharu yang lulus tapisan
+      const insertPayload = newUniqueBlocks.map((block) => {
         const bloomMatch = block.match(/\[(C[1-6]|P[1-5]|A[1-5])\]/i);
         const detectedBloom = bloomMatch ? bloomMatch[1].toUpperCase() : 'C1';
 
@@ -502,12 +569,17 @@ export default function PenjanaSoalanPage() {
         };
       });
 
-      // 3. Masukkan senarai soalan berasingan terus ke Supabase
+      // 5. Masukkan senarai soalan unik terus ke Supabase
       const { error } = await supabase.from('questions').insert(insertPayload);
 
       if (!error) {
         setIsSavedBank(true);
-        alert(`✅ Berjaya! ${insertPayload.length} soalan individu telah disimpan ke Bank Soalan.`);
+        const skippedCount = finalBlocks.length - newUniqueBlocks.length;
+        let msg = `✅ Berjaya! ${newUniqueBlocks.length} soalan baharu telah disimpan ke Bank Soalan.`;
+        if (skippedCount > 0) {
+          msg += `\n\nℹ️ Nota: ${skippedCount} soalan yang serupa/pendua telah ditapis secara automatik.`;
+        }
+        alert(msg);
         setTimeout(() => setIsSavedBank(false), 3000);
       } else {
         throw new Error(error.message || 'Gagal menyimpan ke Bank Soalan.');
@@ -557,7 +629,12 @@ export default function PenjanaSoalanPage() {
 
       let fullQuestionsText = "";
 
-      // PENJANAAN BERURUTAN
+      // HACK: Memaksa arahan Wajaran Topik masuk secara ketat ke dalam minda AI menerusi pembolehubah 'courseName'
+      const activeTopicsList = activeTopics.map(t => `"${t.name}" (${t.percentage}%)`).join(', ');
+      const topicStrictPrompt = activeTopics.length > 0 
+          ? `\n\n[AMARAN MUTLAK: Anda WAJIB membina soalan secara seimbang dan merangkumi keseluruhan topik berikut mengikut wajaran: ${activeTopicsList}. DILARANG HANYA FOKUS PADA SATU TOPIK SAHAJA!]`
+          : '';
+
       for (const part of activeParts) {
         setProgressText(`Sedang memproses BAHAGIAN ${part}...`);
 
@@ -567,7 +644,7 @@ export default function PenjanaSoalanPage() {
           body: JSON.stringify({
             mode: part,
             subjectId: selectedSubject,
-            courseName,
+            courseName: courseName + topicStrictPrompt, // Suntikan arahan Wajaran di sini
             courseCode,
             theme,
             sectionData: sections[part],
@@ -581,7 +658,9 @@ export default function PenjanaSoalanPage() {
           }),
         });
 
-        const json = await res.json();
+        // Safe-parsing res.text() untuk mengelakkan ralat JSON.parse
+        const text = await res.text();
+        const json = text ? JSON.parse(text) : {};
 
         if (!res.ok || !json.success) {
           clearInterval(intervalId);
@@ -613,7 +692,9 @@ export default function PenjanaSoalanPage() {
         }),
       });
 
-      const schemeData = await schemeRes.json();
+      const schemeText = await schemeRes.text();
+      const schemeData = schemeText ? JSON.parse(schemeText) : {};
+
       if (schemeRes.ok && schemeData.success) {
         setGeneratedScheme(schemeData.data);
       } else {
@@ -664,7 +745,7 @@ export default function PenjanaSoalanPage() {
     <div style={{ backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '"Inter", "Segoe UI", sans-serif', position: 'relative' }}>
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '340px', background: 'linear-gradient(135deg, #3b0764, #4a154b)', zIndex: 0 }} />
       <div style={{ maxWidth: '1250px', margin: '0 auto', padding: '40px 20px', position: 'relative', zIndex: 1 }}>
-      
+        
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '45px', paddingTop: '10px' }}>
           
           <Link
@@ -722,19 +803,19 @@ export default function PenjanaSoalanPage() {
                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                       <span style={{ color: '#64748b', fontWeight: '600' }}>CO/CLO:</span>
                       {subjectCOs.length > 0 ? subjectCOs.map((co, idx) => (
-                        <span key={idx} style={{ backgroundColor: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid #7dd3fc' }}>{co}</span>
+                        <span key={idx} style={{ backgroundColor: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: '4px', fontWeight: '500', border: '1px solid #7dd3fc' }}>{co}</span>
                       )) : <span style={{ color: '#94a3b8' }}>-</span>}
                     </div>
                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                       <span style={{ color: '#64748b', fontWeight: '600' }}>LO/PLO:</span>
                       {subjectLOs.length > 0 ? subjectLOs.map((lo, idx) => (
-                        <span key={idx} style={{ backgroundColor: '#f5f3ff', color: '#6d28d9', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid #c4b5fd' }}>{lo}</span>
+                        <span key={idx} style={{ backgroundColor: '#f5f3ff', color: '#6d28d9', padding: '2px 8px', borderRadius: '4px', fontWeight: '500', border: '1px solid #c4b5fd' }}>{lo}</span>
                       )) : <span style={{ color: '#94a3b8' }}>-</span>}
                     </div>
                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                       <span style={{ color: '#64748b', fontWeight: '600' }}>Domain:</span>
                       {subjectDomains.length > 0 ? subjectDomains.map((dom, idx) => (
-                        <span key={idx} style={{ backgroundColor: '#ffedd5', color: '#c2410c', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid #fdba74' }}>{dom}</span>
+                        <span key={idx} style={{ backgroundColor: '#ffedd5', color: '#c2410c', padding: '2px 8px', borderRadius: '4px', fontWeight: '500', border: '1px solid #fdba74' }}>{dom}</span>
                       )) : <span style={{ color: '#94a3b8' }}>-</span>}
                     </div>
                   </div>
@@ -878,7 +959,7 @@ export default function PenjanaSoalanPage() {
               disabled={isGenerateDisabled} 
               style={{ width: '100%', padding: '18px', backgroundColor: isGenerateDisabled ? '#94a3b8' : '#2563eb', color: 'white', border: 'none', borderRadius: '12px', fontSize: '1.1rem', fontWeight: 'bold', cursor: isGenerateDisabled ? 'not-allowed' : 'pointer', marginBottom: '30px' }}
             >
-              {isGenerating ? '⚙️ Sistem Modular Sedang Memproses...' : (!isAllSectionsValid || !isTopicSectionValid) ? '⚠️ Sila Cukupkan Aras Bloom & Wajaran Topik' : '✨ Jana Kertas Soalan & Skema'}
+              {isGenerating ? '⚙ Sistem Modular Sedang Memproses...' : (!isAllSectionsValid || !isTopicSectionValid) ? '⚠️ Sila Cukupkan Aras Bloom & Wajaran Topik' : '✨ Jana Kertas Soalan & Skema'}
             </button>
           </div>
 

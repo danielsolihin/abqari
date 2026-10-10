@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "npx cross-env NODE_OPTIONS=--max-http-header-size=64000 next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -37,6 +37,7 @@
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "cross-env": "^7.0.3",
     "typescript": "latest"
   }
 }

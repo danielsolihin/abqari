@@ -10,19 +10,48 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PU
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ============================================================
-// PEMETAAN KATA TUGAS / KATA PERINTAH TAKSONOMI BLOOM (C1 - C6)
+// PEMETAAN KATA TUGAS / KATA PERINTAH TAKSONOMI BLOOM (KHAS ESEI SAHAJA)
 // ============================================================
 const BLOOM_VERBS_MAP: Record<string, string[]> = {
   C1: ["Aktifkan", "Perihalkan", "Kenal pasti", "Labelkan", "Senaraikan", "Padankan", "Namakan", "Lakarkan", "Nyatakan kembali", "Hasilkan semula", "Pilih", "Nyatakan"],
-  C2: ["Ubah", "Tafsirkan", "Jelaskan", "Rumuskan", "Wajarkan", "Terangkan", "Ramalkan", "Terjemahkan", "Anggarkan", "Buat inferens", "Tulis semula"],
+  C2: ["Ubah", "Tafsirkan", "Jelaskan", "Rumuskan", "Wajarkan", "Terangkan", "Ramalkan", "Terjemahkan", "Anggarkan", "Bina inferens", "Tulis semula"],
   C3: ["Itlakkan", "Hitung", "Tunjuk cara", "Teroka", "Ubah suai", "Sediakan", "Selesaikan", "Jana", "Manipulasikan", "Ramal", "Tunjukkan", "Hubungkaitkan"],
-  C4: ["Analisis", "Pilih", "Asingkan", "Bandingkan", "Bezakan", "Jelaskan dengan gambar rajah", "Huraikan", "Tunjukkan perbezaan", "Diskriminasikan", "Kenal pasti", "Ilustrasikan", "Buat inferens", "Lakarkan", "Hubungkaitkan"],
-  C5: ["Gabungkan", "Karang", "Jana", "Organisasikan", "Bina semula", "Reka cipta", "Ubah suai", "Atur semula", "Tulis", "Semak", "Huraikan", "Rancang", "Himpunkan", "Hubungkaitkan", "Organisasikan semula", "Rumuskan", "Tulis semula"],
+  C4: ["Analisis", "Pilih", "Asingkan", "Bandingkan", "Bezakan", "Jelaskan dengan gambar rajah", "Huraikan", "Tunjukkan perbezaan", "Diskriminasikan", "Kenal pasti", "Ilustrasikan", "Bina inferens", "Lakarkan", "Hubungkaitkan"],
+  C5: ["Gabungkan", "Karang", "Jana", "Organisasikan", "Bina semula", "Rekaciptakan", "Ubah suai", "Atur semula", "Tulis", "Semak", "Huraikan", "Rancang", "Himpunkan", "Hubungkaitkan", "Organisasikan semula", "Rumuskan", "Tulis semula"],
   C6: ["Taksir", "Bandingkan", "Simpulkan", "Bezakan", "Kritik", "Wajarkan", "Diskriminasikan", "Nilaikan", "Tafsirkan", "Adili", "Bincangkan kewajaran", "Rumuskan dan sokong"]
 };
 
 // ============================================================
-// OPENAI EMBEDDING (PANTAS & STABIL DI VERCEL)
+// DEFINISI RUBRIK CO & BLOOM (BERDASARKAN DOKUMEN RASMI)
+// ============================================================
+const RUBRIK_AKADEMIK = `
+PANDUAN RUBRIK COURSE OUTCOMES (CO) & ARAS BLOOM:
+Anda DIWAJIBKAN untuk menggubal soalan dan menetapkan tag supaya selari dengan takrifan rubrik berikut secara 100%:
+
+[COURSE OUTCOMES (CO)]
+CO1: Pengetahuan dan Kefahaman - Keupayaan pelajar memahami, menerangkan dan menggunakan pengetahuan berkaitan bidang.
+CO2: Kemahiran Kognitif - Keupayaan pelajar berfikir secara kritis, menganalisis, menilai dan menyelesaikan masalah.
+CO3: Kemahiran Praktikal - Keupayaan mengaplikasikan pengetahuan dan kemahiran praktikal.
+CO4: Kemahiran Interpersonal - Keupayaan berinteraksi dan bekerjasama.
+CO5: Kemahiran Komunikasi - Penyampaian idea secara lisan/tulisan dengan jelas.
+CO6: Kemahiran Digital - Guna teknologi/sumber digital.
+CO7: Kemahiran Numerasi - Guna nombor, data, statistik.
+CO8: Kepimpinan, Autonomi dan Tanggungjawab - Memimpin, buat keputusan kendiri.
+CO9: Kemahiran Kendiri - Urus diri, belajar kendiri.
+CO10: Kemahiran Keusahawanan - Peluang perniagaan, inisiatif.
+CO11: Etika dan Profesionalisme - Nilai, etika, integriti.
+
+[DOMAIN KOGNITIF / ARAS BLOOM (C)]
+C1 (Pengetahuan): Mengingat أو menyatakan semula fakta/konsep.
+C2 (Pemahaman): Menerangkan, menghuraikan, memberikan contoh.
+C3 (Aplikasi): Menggunakan pengetahuan dalam situasi tertentu.
+C4 (Analisis): Memecahkan maklumat, mengenal pasti hubungan/perbandingan.
+C5 (Sintesis): Menggabungkan pengetahuan untuk menghasilkan idea baharu.
+C6 (Penilaian): Membuat pertimbangan, justifikasi berdasarkan standard tertentu.
+`;
+
+// ============================================================
+// OPENAI EMBEDDING
 // ============================================================
 async function getEmbedding(text: string): Promise<number[]> {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -51,7 +80,7 @@ async function getEmbedding(text: string): Promise<number[]> {
 }
 
 // ============================================================
-// FUNGSI PENAPIS AUTOMATIK PEKA BAHASA & TATABAHASA
+// FUNGSI PENAPIS AUTOMATIK PEKA BAHASA & TATABAHASA DBP
 // ============================================================
 function cleanAndTransformQuestions(text: string, language: string = "Bahasa Melayu", questionType: string = "objektif"): string {
   if (!text) return "";
@@ -59,13 +88,61 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
   let processedText = text.replace(/\\t/g, "\t");
   processedText = processedText.replace(/\bDiskusikan\b/gi, "Bincangkan");
 
-  // PEMBETULAN TATABAHASA SOALAN OBJEKTIF SAHAJA (Tukarkan kata perintah kepada kata tanya)
   if (questionType === "objektif" || questionType === "true_false") {
-    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Hitung\b/gmi, "$1Manakah");
-    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Tunjukkan cara bagaimana\b/gmi, "$1Bagaimanakah cara");
-    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Tunjuk cara bagaimana\b/gmi, "$1Bagaimanakah cara");
-    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Tunjukkan bagaimana\b/gmi, "$1Bagaimanakah");
-    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Tunjuk cara\b/gmi, "$1Bagaimanakah cara");
+    // Baiki ralat ejaan minor
+    processedText = processedText.replace(/yang manakah kembali/gi, "yang manakah");
+    
+    // TUKAR "SINTESIS" ATAU "SINTESISKAN" KEPADA "RUMUSKAN" KHAS UNTUK OBJEKTIF
+    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Sintesis(kan|lah|kanlah)?\b/gmi, "$1Rumuskan");
+
+    // 1. TANGKAP GABUNGAN "KATA PERINTAH + KATA TANYA" TERMASUK IMBUHAN "-lah" SEBELUM IA DITUKAR MENJADI "ANTARA BERIKUT"
+    const verbBagaimana = /^(\s*(?:\d+[\.\)])?\s*)(?:Senaraikan|Perihalkan|Analisis|Lakarkan|Jelaskan|Huraikan|Bincangkan|Wajarkan|Nilaikan|Taksir|Kritik|Adili|Aktifkan|Kirakan|Hubungkan|Terangkan|Tafsirkan|Kenal pasti|Hitung)(?:lah|kan|kanlah)?\s+bagaimana(kah)?\b/gmi;
+    processedText = processedText.replace(verbBagaimana, "$1Bagaimanakah");
+
+    const verbApakah = /^(\s*(?:\d+[\.\)])?\s*)(?:Senaraikan|Perihalkan|Analisis|Lakarkan|Jelaskan|Huraikan|Bincangkan|Wajarkan|Nilaikan|Taksir|Kritik|Adili|Aktifkan|Kirakan|Hubungkan|Terangkan|Tafsirkan|Kenal pasti|Hitung)(?:lah|kan|kanlah)?\s+apa(kah)?\b/gmi;
+    processedText = processedText.replace(verbApakah, "$1Apakah");
+
+    const verbSiapakah = /^(\s*(?:\d+[\.\)])?\s*)(?:Senaraikan|Perihalkan|Analisis|Lakarkan|Jelaskan|Huraikan|Bincangkan|Wajarkan|Nilaikan|Taksir|Kritik|Adili|Aktifkan|Kirakan|Hubungkan|Terangkan|Tafsirkan|Kenal pasti|Hitung)(?:lah|kan|kanlah)?\s+siapa(kah)?\b/gmi;
+    processedText = processedText.replace(verbSiapakah, "$1Siapakah");
+
+    const verbMengapakah = /^(\s*(?:\d+[\.\)])?\s*)(?:Senaraikan|Perihalkan|Analisis|Lakarkan|Jelaskan|Huraikan|Bincangkan|Wajarkan|Nilaikan|Taksir|Kritik|Adili|Aktifkan|Kirakan|Hubungkan|Terangkan|Tafsirkan|Kenal pasti|Hitung)(?:lah|kan|kanlah)?\s+mengapa(kah)?\b/gmi;
+    processedText = processedText.replace(verbMengapakah, "$1Mengapakah");
+
+    // 2. TAPIS DAN TUKAR KATA PERINTAH ESEI TUNGGAL (TERMASUK IMBUHAN -lah) KEPADA "ANTARA BERIKUT"
+    const essayVerbsPattern = /^(\s*(?:\d+[\.\)])?\s*)(?:Senaraikan|Perihalkan|Analisis|Lakarkan|Jelaskan|Huraikan|Bincangkan|Wajarkan|Nilaikan|Taksir|Kritik|Adili|Aktifkan|Kirakan|Hubungkan|Terangkan|Tafsirkan|Kenal pasti|Hitung)(?:lah|kan|kanlah)?\b/gmi;
+    processedText = processedText.replace(essayVerbsPattern, "$1Antara berikut, yang manakah");
+
+    // 3. JARING KESELAMATAN (SAFETY NET) UNTUK TATABAHASA BERLAPIS YANG PELIK
+    processedText = processedText.replace(/Antara berikut,?\s*yang manakah\s+bagaimana(kah)?/gi, "Bagaimanakah");
+    processedText = processedText.replace(/Manakah\s+antara\s+berikut,?\s*bagaimana(kah)?/gi, "Bagaimanakah");
+    processedText = processedText.replace(/Antara berikut,?\s*yang manakah\s+apa(kah)?/gi, "Apakah");
+    processedText = processedText.replace(/Manakah\s+antara\s+berikut,?\s*apa(kah)?/gi, "Apakah");
+    processedText = processedText.replace(/Antara berikut,?\s*yang manakah\s+siapa(kah)?/gi, "Siapakah");
+    processedText = processedText.replace(/Manakah\s+antara\s+berikut,?\s*siapa(kah)?/gi, "Siapakah");
+    processedText = processedText.replace(/Antara berikut,?\s*yang manakah\s+mengapa(kah)?/gi, "Mengapakah");
+    processedText = processedText.replace(/Manakah\s+antara\s+berikut,?\s*mengapa(kah)?/gi, "Mengapakah");
+
+    // 4. PEMBETULAN SOALAN TERGANTUNG / TIDAK FORMAL / LEWAH (REDUNDANT)
+    processedText = processedText.replace(/(menggambarkan|menerangkan|menjelaskan)\s+(?:yang\s+)?dimaksudkan\s+dengan/gi, "$1 maksud");
+    
+    processedText = processedText.replace(/Antara berikut,\s*yang manakah\s+terhadap\s+([a-zA-Z0-9\-\s]+)\s+menunjukkan bahawa\.\.\./gi, "Apakah kesimpulan yang boleh diambil mengenai $1?");
+    
+    processedText = processedText.replace(/\bApakah maksudnya\?/gi, "Apakah yang dimaksudkan dengan pernyataan ini?");
+    processedText = processedText.replace(/\bApakah maksud pernyataan di atas\?/gi, "Apakah yang dimaksudkan dengan pernyataan ini?");
+    
+    processedText = processedText.replace(/([a-zA-Z0-9\-\s]+)\s+aspek apa\?/gi, "Apakah aspek yang perlu diambil kira dalam $1?");
+    processedText = processedText.replace(/([a-zA-Z0-9\-\s]+)\s+(apa|bagaimana|kenapa)\?/gi, "Apakah $1?");
+
+    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Sejauh manakah\s+(?:yang\s+dimaksudkan\s+dengan)?/gmi, "$1Antara berikut, yang manakah");
+    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Mengapakah\s+yang\s+dimaksudkan\s+dengan\b/gmi, "$1Manakah antara berikut, jawapan yang menerangkan maksud");
+    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Mengapakah\s+(kepentingan|tujuan|peranan|fungsi|faktor|maksud|definisi|elemen|konsep|kesan|cabaran|aspek)\b/gmi, "$1Manakah antara berikut $2");
+    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Mengapakah\b/gmi, "$1Manakah antara berikut");
+
+    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Nyatakan\s+(?:dua|tiga|empat|beberapa)\s+aspek/gmi, "$1Manakah antara berikut aspek");
+    processedText = processedText.replace(/^(\s*(?:\d+[\.\)])?\s*)Nyatakan\s+(?:satu|dua|tiga|empat|beberapa)?\s*/gmi, "$1Antara berikut, yang manakah ");
+
+    processedText = processedText.replace(/\bdalam artikel ini\b/gi, "dalam topik ini");
+    processedText = processedText.replace(/\bdalam petikan ini\b/gi, "berdasarkan topik ini");
   }
 
   const langLower = (language || "").toLowerCase();
@@ -73,7 +150,25 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
   const isEnglish = langLower.includes("english") || langLower.includes("inggeris");
 
   let lines = processedText.split("\n");
-  let isNested = false;
+
+  // SAFETY NET BARU: MEMBUANG DOUBLE QUESTION SECARA PAKSA
+  if (questionType === "objektif" || questionType === "true_false") {
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+      // Jika terjumpa baris nombor soalan dan ada tanda soal
+      if (/^\d+\.\s+/.test(line) && line.includes('?')) {
+        let j = i + 1;
+        // Cari baris teks seterusnya yang tidak kosong
+        while(j < lines.length && lines[j].trim() === '') j++;
+        // Jika baris seterusnya BUKAN pilihan roman/abcd, dan ia ada tanda soal juga (Double Question Detected)
+        if (j < lines.length && lines[j].includes('?') && !/^[i|v|x]+\./i.test(lines[j]) && !/^[A-D][\.\)]/i.test(lines[j])) {
+          // Buang bahagian soalan dari baris nombor supaya tinggal penyata sahaja
+          const cleanLine = line.replace(/\s*(?:Apakah|Bagaimanakah|Manakah|Mengapakah|Siapakah|What|How|Which|كيف|ما|لماذا)[^?]*\?/gi, '.').replace(/\.+$/, '.');
+          lines[i] = cleanLine;
+        }
+      }
+    }
+  }
 
   if (isArabic) {
     const backupFactDArabic = [
@@ -85,15 +180,10 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
 
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i];
-      if (/^\s*i\.\s+/i.test(line)) isNested = true;
-      if (/^\d+\.\s+/.test(line)) isNested = false;
-
-      if (!isNested && /D\.\s+(جميع ما ذكر|جميع ما سبق|All of the above)/i.test(line)) {
-        const randomD = backupFactDArabic[Math.floor(Math.random() * backupFactDArabic.length)];
-        lines[i] = `\t${randomD}`;
+      if (/D\.\s+(جميع ما ذكر|جميع ما سبق|All of the above)/i.test(line)) {
+        lines[i] = `\t${backupFactDArabic[Math.floor(Math.random() * backupFactDArabic.length)]}`;
       }
     }
-    return lines.join("\n");
   }
 
   if (isEnglish) {
@@ -106,63 +196,46 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
 
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i];
-      if (/^\s*i\.\s+/i.test(line)) isNested = true;
-      if (/^\d+\.\s+/.test(line)) isNested = false;
-
-      if (!isNested && /D\.\s+All of the above/i.test(line)) {
-        const randomD = backupFactDEnglish[Math.floor(Math.random() * backupFactDEnglish.length)];
-        lines[i] = `\t${randomD}`;
+      if (/D\.\s+All of the above/i.test(line)) {
+        lines[i] = `\t${backupFactDEnglish[Math.floor(Math.random() * backupFactDEnglish.length)]}`;
       }
     }
-    return lines.join("\n");
   }
 
+  processedText = lines.join("\n");
   processedText = processedText.replace(/Apakah wajar ([a-zA-Z0-9\-\s]+?) yang/gi, "Apakah $1 wajar yang");
   lines = processedText.split("\n");
 
-  const questionPrefixes = [
-    "Mengapakah",
+  const diverseQuestionPrefixes = [
     "Bagaimanakah",
-    "Sejauh manakah",
+    "Apakah",
     "Manakah antara berikut",
-    "Apakah"
-  ];
-
-  const backupFactD = [
-    "D.\tMeningkatkan sistem pentadbiran dan pertahanan negara",
-    "D.\tMemperkasa peranan institusi pendidikan antarabangsa",
-    "D.\tMengukuhkan kerjasama ekonomi serantau",
-    "D.\tMemastikan pengagihan sumber kewangan secara berkala"
+    "Pilih penyataan yang paling tepat berkenaan",
+    "Pernyataan manakah yang menggambarkan"
   ];
 
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
 
-    if (/^\s*i\.\s+/i.test(line)) isNested = true;
-
     if (/^\d+\.\s+/.test(line)) {
-      isNested = false;
-      
-      const isNounQuestion = /Apakah\s+(tujuan|maksud|definisi|elemen|faktor|fungsi|komponen|pernyataan|konsep|sifat|kesan|cabaran|peranan)/i.test(line);
+      // Ditambah "yang dimaksudkan" ke dalam regex ini supaya pengecualian berlaku 
+      const isNounQuestion = /Apakah\s+(tujuan|maksud|definisi|elemen|faktor|fungsi|komponen|pernyataan|konsep|sifat|kesan|cabaran|peranan|kepentingan|aspek|yang\s+dimaksudkan)/i.test(line);
 
+      // Rawak prefix HANYA jika ia tiada dalam pengecualian isNounQuestion
       if (line.includes("Apakah ") && !isNounQuestion && Math.random() > 0.6) {
-        const randomPrefix = questionPrefixes[Math.floor(Math.random() * questionPrefixes.length)];
+        const randomPrefix = diverseQuestionPrefixes[Math.floor(Math.random() * diverseQuestionPrefixes.length)];
         lines[i] = line.replace(/Apakah\s+/gi, `${randomPrefix} `);
       }
     }
-
-    if (!isNested && /D\.\s+Semua di atas/i.test(line)) {
-      const randomD = backupFactD[Math.floor(Math.random() * backupFactD.length)];
-      lines[i] = `\t${randomD}`;
-    }
   }
 
-  return lines.join("\n");
+  let finalResult = lines.join("\n");
+  // Final Cleanup keselamatan untuk memastikan sisa frasa lewah dihilangkan sepenuhnya
+  finalResult = finalResult.replace(/(menggambarkan|berkenaan)\s+(?:yang\s+)?dimaksudkan\s+dengan/gi, "$1 maksud");
+
+  return finalResult;
 }
 
-// ============================================================
-// MEMECAHKAN TEKS GERGASI KEPADA SOALAN INDIVIDU
-// ============================================================
 function splitIntoIndividualQuestions(fullText: string): string[] {
   if (!fullText) return [];
   const parts = fullText.split(/(?=\n?\b\d+\.[\t\s])/g);
@@ -202,7 +275,7 @@ export async function POST(req: NextRequest) {
       let schemaPrompt = "";
       if (isArabic) {
         schemaPrompt = `أنت خبير في إعداد نموذج الإجابة لامتحانات جامعة UiTM.
-قدم نموذج إجابة كامل وفقط للأسئلة الموجودة في ورقة الأسئلة أدناه (${language}).
+قدم نموذج الإجابة كامل وفقط للأسئلة الموجودة في ورقة الأسئلة أدناه (${language}).
 1. إذا كانت الورقة تحتوي على أسئلة اختيار من متعدد فقط: اذكر رقم السؤال وحرف الإجابة فقط العمودية (مثال: 1. A).
 2. إذا كانت هناك أسئلة مقالية: أعد كتابة نص السؤال الأصلي قبل تقديم الإجابة في شكل نقاط مع توزيع الدرجات.
 ورقة الأسئلة:
@@ -210,7 +283,7 @@ ${fullQuestions}`;
       } else if (isEnglish) {
         schemaPrompt = `You are a UiTM University Examination Examiner.
 Provide a COMPLETE ANSWER SCHEME ONLY for the questions present in the QUESTION PAPER below (${language}).
-1. IF THE QUESTION PAPER CONTAINS ONLY OBJECTIVE / TRUE-FALSE: State ONLY the question number and answer letter vertically (e.g., 1. A).
+1. IF THE PAPER CONTAINS OBJECTIVE / TRUE-FALSE: State ONLY the question number and answer letter vertically (e.g., 1. A).
 2. IF ESSAY QUESTIONS ARE PRESENT: REPEAT THE ORIGINAL QUESTION STATEMENT before providing point-form answers with marks.
 QUESTION PAPER:
 ${fullQuestions}`;
@@ -276,16 +349,38 @@ ${fullQuestions}`;
       questionType = "true_false";
     }
 
-    const bloomStr = Object.entries(sectionData?.bloom || activeSec?.bloom || {}).filter(([_, count]) => Number(count) > 0).map(([lvl]) => `${lvl}`).join(", ") || "C1";
+    const parseNum = (val: any) => { const n = Number(val); return isNaN(n) ? 0 : n; };
+    const count = parseNum(sectionData?.count) || parseNum(activeSec?.count) || parseNum(body?.count) || 5;
+    const beranak = parseNum(sectionData?.beranakCount) || parseNum(activeSec?.beranakCount) || parseNum(activeSec?.beranak) || parseNum(body?.beranakCount) || parseNum(body?.beranak) || 0;
+    const biasaCount = Math.max(0, count - beranak);
     
-    // PEMBINAAN PANDUAN KATA KERJA BLOOM (KATA PERINTAH)
-    const activeBloomLevels = Object.entries(sectionData?.bloom || activeSec?.bloom || {})
-      .filter(([_, count]) => Number(count) > 0)
+    const bloomSpec = sectionData?.bloom || activeSec?.bloom || {};
+    const c1 = parseNum(bloomSpec.C1);
+    const c2 = parseNum(bloomSpec.C2);
+    const c3 = parseNum(bloomSpec.C3);
+    const c4 = parseNum(bloomSpec.C4);
+    const c5 = parseNum(bloomSpec.C5);
+    const c6 = parseNum(bloomSpec.C6);
+
+    let formattedCOs = (Array.isArray(co) ? co : []).map(c => {
+      let str = String(c).toUpperCase().trim();
+      if (/^C\d+$/.test(str)) return str.replace('C', 'CO');
+      if (/^CO\d+$/.test(str)) return str;
+      return null;
+    }).filter(Boolean);
+    if (formattedCOs.length === 0) formattedCOs = ['CO1', 'CO2'];
+    const coOptions = formattedCOs.join(', ');
+
+    const totalSectionMarks = parseNum(sectionData?.marks) || parseNum(activeSec?.marks) || 10;
+    const subMarks = Math.max(1, Math.floor(totalSectionMarks / (count * 2)));
+
+    const activeBloomLevels = Object.entries(bloomSpec)
+      .filter(([_, cnt]) => Number(cnt) > 0)
       .map(([lvl]) => lvl.toUpperCase());
 
     let bloomVerbsInstruction = "";
-    if (activeBloomLevels.length > 0) {
-      bloomVerbsInstruction = "\nARAHAN KATA TUGAS / KATA PERINTAH BLOOM (WAJIB GUNAKAN SEBAGAI KATA AWALAN SOALAN):\n";
+    if (activeBloomLevels.length > 0 && questionType === "essay") {
+      bloomVerbsInstruction = "\nARAHAN KATA TUGAS / KATA PERINTAH BLOOM (WAJIB GUNAKAN PADA ANAK SOALAN 'a.' & 'b.' SAHAJA):\n";
       activeBloomLevels.forEach(level => {
         if (BLOOM_VERBS_MAP[level]) {
           bloomVerbsInstruction += `- Aras ${level}: [${BLOOM_VERBS_MAP[level].join(", ")}]\n`;
@@ -293,55 +388,97 @@ ${fullQuestions}`;
       });
     }
 
-    const parseNum = (val: any) => { const n = Number(val); return isNaN(n) ? 0 : n; };
-    const count = parseNum(sectionData?.count) || parseNum(activeSec?.count) || parseNum(body?.count) || 5;
-    const beranak = parseNum(sectionData?.beranakCount) || parseNum(activeSec?.beranakCount) || parseNum(activeSec?.beranak) || parseNum(body?.beranakCount) || parseNum(body?.beranak) || 0;
-    const biasaCount = Math.max(0, count - beranak);
-    
-    const domainStr = domain.length > 0 ? domain[0] : "P3";
-    const coStr = co.length > 0 ? co[0] : "CO1";
-    const loStr = lo.length > 0 ? lo[0] : "LO1";
+    let currentQNum = 1;
+    let bloomMappingMs = "";
+    let bloomMappingEn = "";
+    let bloomMappingAr = "";
 
-    const totalSectionMarks = parseNum(sectionData?.marks) || parseNum(activeSec?.marks) || 10;
-    const subMarks = Math.max(1, Math.floor(totalSectionMarks / (count * 2)));
+    const bloomCounts = [
+      { level: 'C1', count: c1 }, { level: 'C2', count: c2 }, { level: 'C3', count: c3 },
+      { level: 'C4', count: c4 }, { level: 'C5', count: c5 }, { level: 'C6', count: c6 }
+    ];
+
+    for (const b of bloomCounts) {
+      for (let i = 0; i < b.count; i++) {
+        
+        let qFormatMs = "";
+        let qFormatEn = "";
+        let qFormatAr = "";
+
+        if (questionType === "objektif") {
+          if (currentQNum <= biasaCount) {
+             qFormatMs = "FORMAT WAJIB: SOALAN BIASA TUNGGAL (A, B, C, D sahaja. DILARANG GUNA ITEM ROMAN i, ii, iii, iv). ";
+             qFormatEn = "MANDATORY FORMAT: REGULAR SINGLE QUESTION (A, B, C, D only. NO ROMAN NUMERALS i, ii, iii, iv). ";
+             qFormatAr = "تنسيق إلزامي: سؤال عادي فردي (A, B, C, D فقط. بدون أرقام رومانية). ";
+          } else {
+             qFormatMs = "FORMAT WAJIB: SOALAN BERANAK / BERLAPIS (WAJIB MENGGUNAKAN ITEM ROMAN i, ii, iii, iv sebelum pilihan A, B, C, D). ";
+             qFormatEn = "MANDATORY FORMAT: BRANCHED QUESTION (YOU MUST USE ROMAN NUMERALS i, ii, iii, iv before the A, B, C, D options). ";
+             qFormatAr = "تنسيق إلزامي: سؤال مركب (يجب استخدام عناصر رومانية i, ii, iii, iv قبل خيارات A, B, C, D). ";
+          }
+        }
+
+        bloomMappingMs += `- Soalan ${currentQNum}: ${qFormatMs}ARAS WAJIB: [${b.level}]. Bina soalan yang menguji kognitif ${b.level}. Kemudian, PILIH SATU tag CO dari senarai (${coOptions}) yang paling logik dan sepadan dengan rubrik Aras ${b.level}. Format baris akhir: [${b.level}] [CO_PILIHAN]\n`;
+        bloomMappingEn += `- Question ${currentQNum}: ${qFormatEn}MANDATORY LEVEL: [${b.level}]. Construct a question that tests ${b.level}. Then, CHOOSE ONE CO tag from (${coOptions}) that logically matches the rubric for Level ${b.level}. Final line format: [${b.level}] [CHOSEN_CO]\n`;
+        bloomMappingAr += `- السؤال ${currentQNum}: ${qFormatAr}المستوى الإلزامي: [${b.level}]. قم بصياغة سؤال يختبر ${b.level}. ثم اختر وسم CO واحد من (${coOptions}) يتوافق منطقياً مع معايير ${b.level}. التنسيق النهائي: [${b.level}] [CO_المختار]\n`;
+        
+        currentQNum++;
+      }
+    }
 
     let formatInstructions = "";
 
     if (isArabic) {
       if (questionType === "objektif") {
         let beranakRuleNoteAr = "";
-        if (beranak > 0 && biasaCount === 0) {
+        if (beranak === 0) {
+          beranakRuleNoteAr = `\nتنبيه هام جداً: جميع الأسئلة الـ ${count} يجب أن تكون أسئلة عادية فقط. يُمنع منعاً باتاً إنشاء أسئلة مركبة تتضمن الترقيم الروماني (i, ii, iii, iv).`;
+        } else if (beranak > 0 && biasaCount === 0) {
           beranakRuleNoteAr = `\nتنبيه هام جداً: جميع الأسئلة الـ ${count} (من السؤال 1 إلى ${count}) يجب أن تكون أسئلة مركبة (تتضمن الترقيم الروماني i, ii, iii, iv). لا تقم بإنشاء أي سؤال عادي!`;
         } else if (beranak > 0) {
-          beranakRuleNoteAr = `\nتنبيه هام جداً لترتيب الأسئلة (يجب الالتزام به حرفياً):
-- الأسئلة المرقمة من 1 إلى ${biasaCount}: يجب أن تكون أسئلة عادية فقط.
-- الأسئلة المرقمة من ${biasaCount + 1} إلى ${count}: يجب أن تكون أسئلة مركبة (يجب أن تتضمن i, ii, iii, iv).`;
+          beranakRuleNoteAr = `\nتنبيه هام جداً لترتيب وكمية الأسئلة (يجب الالتزام به حرفياً):
+- عدد الأسئلة العادية: ${biasaCount} أسئلة بالضبط. (الأسئلة المرقمة من 1 إلى ${biasaCount} يجب أن تكون أسئلة عادية فقط).
+- عدد الأسئلة المركبة: ${beranak} أسئلة بالضبط. (الأسئلة المرقمة من ${biasaCount + 1} إلى ${count} يجب أن تكون أسئلة مركبة وتستخدم أرقام رومانية).
+لا تقم بتغيير هذه الكميات!`;
         }
 
         formatInstructions = `
 متطلبات العدد الصارمة:
 - إجمالي الأسئلة: ${count} أسئلة بالضبط (مرقمة من 1 إلى ${count}).
+- تحذير حرج: توقف عن التوليد فوراً بعد السؤال رقم ${count}.
 ${beranakRuleNoteAr}
 
-تعليمات الأسئلة العادية:
-- استخدم أدوات استفهام متنوعة. يجب أن يكون كل خيار حقيقة مختلفة.
-- قاعدة المحاذاة: يجب وضع Tab (\\t) واحد مباشرة بعد رقم السؤال، و Tab (\\t) واحد قبل جميع الخيارات لمحاذاتها تماماً.
-مثال:
-1.\tكيف يُعرّف أصول الفقه في التشريع الإسلامي؟
+خريطة التوزيع الصارمة (يجب الالتزام بها 100% لكل سؤال):
+${bloomMappingAr}
 
-\tA. أدلة الفقه الإجمالية
-\tB. الأحكام الشرعية الفرعية
-\tC. القواعد الفقهية الكلية
-\tD. التواريخ التاريخية
-\t[C3] [${coStr}] [${loStr}] [${domainStr}]
+تحذير صارم لهيكل الأسئلة الموضوعية:
+1. يجب توفير خيارات الإجابة: يجب أن يحتوي كل سؤال موضوعي على 4 خيارات للإجابة (A، B، C، D). لا تقم أبداً بإنشاء سؤال بدون خيارات إجابة!
+2. لا تضع سؤالين في رقم واحد. استخدم علامة استفهام واحدة (?) لكل سؤال.
+3. لأسئلة C1 و C2، يُمنع منعاً باتاً استخدام عبارة تقريرية في البداية. ابدأ مباشرة بسؤال مباشر.
+
+تعليمات الأسئلة العادية:
+- قاعدة المحاذاة: يجب وضع Tab (\\t) واحد مباشرة بعد رقم السؤال، و Tab (\\t) واحد قبل جميع الخيارات.
+مثال للأسئلة العادية (C1/C2 - لا توجد عبارة تقريرية):
+1.\tما هو الهدف الرئيسي من الفلسفة؟
+
+\tA. الخيار الأول
+\tB. الخيار الثاني
+\tC. الخيار الثالث
+\tD. الخيار الرابع
+\t[C1] [CO1]
 
 تعليمات الأسئلة المركبة:
-- يجب أن يبدأ كل سؤال ببيان، يليه سؤال فرعي، ثم 4 عناصر رومانية (i, ii, iii, iv).
-- قاعدة المحاذاة: جميع الأسطر بعد رقم السؤال يجب أن تبدأ بـ Tab (\\t) واحد للمحاذاة العمودية الدقيقة.
-مثال:
+- السطر الأول الذي يحتوي على رقم السؤال يجب أن يكون عبارة تقريرية فقط وتنتهي بنقطة (.). لا تضع علامة استفهام (؟) في هذا السطر أبداً!
+- ثم، اترك سطراً فارغاً واكتب السؤال الفعلي. يجب أن يكون السؤال مكتملاً.
+
+[مثال خاطئ - لا تفعل هذا أبداً]:
+2. علم الفلك مهم. ما هو تطبيقه؟ (خاطئ: يحتوي على علامة استفهام في السطر الأول)
+
+ما هو التطبيق المناسب؟ (خاطئ: تكرار السؤال مرتين)
+
+[مثال صحيح - يجب اتباعه]:
 2.\tيُعتبر الإجماع المصدر الثالث من مصادر التشريع الإسلامي.
 
-\tبناءً على النص، ما هي شروط الإجماع؟
+\tبناءً على النص، ما هي شروط الإجماع لتحقيق هذا الهدف؟
 
 \ti. اتفاق المجتهدين
 \tii. الاعتماد على مستند
@@ -350,58 +487,90 @@ ${beranakRuleNoteAr}
 
 \tA. i و ii
 \tB. ii و iii
-\tC. i و ii و iv
+\tC. i، ii و iv
 \tD. جميع ما ذكر
-\t[C4] [${coStr}] [${loStr}] [${domainStr}]`;
+\t[C4] [CO2]`;
       } else if (questionType === "true_false") {
-        formatInstructions = `صيغة صح أم خطأ (${count} أسئلة). مثال:
+        formatInstructions = `صيغة صح أم خطأ (${count} أسئلة). 
+- تحذير حرج: توقف عن التوليد فوراً بعد السؤال رقم ${count}.
+${bloomMappingAr}
+مثال:
 1.\tيُعتبر القياس من الأدلة المتفق عليها عند جميع العلماء.
 
 \t[صواب] [خطأ]
-\t[C1] [${coStr}] [${loStr}] [${domainStr}]`;
+\t[C1] [CO1]`;
       } else {
-        formatInstructions = `صيغة الأسئلة المقالية (${count} أسئلة). مثال:
-1.\tتلعب أصول الفقه دوراً محورياً في ضبط عملية الاجتهاد واستنباط الأحكام الشرعية.
+        formatInstructions = `صيغة الأسئلة المقالية (${count} أسئلة). 
+- تحذير حرج: توقف عن التوليد فوراً بعد السؤال رقم ${count}.
+${bloomMappingAr}
+${bloomVerbsInstruction}
+
+قواعد المقال:
+1. يجب أن يبدأ السؤال الرئيسي (رقم 1 ، 2 ...) ببيان / جملة تقريرية كاملة. يُمنع منعاً باتاً بدء السؤال الرئيسي بكلمة أمر أو سؤال!
+2. تُستخدم أفعال بلوم فقط في الأسئلة الفرعية ('a.' و 'b.').
+
+مثال:
+1.\tتلعب أصول الفقه دوراً محورياً في ضبط عملية الاجتهاد واستنباط الأحكام الشرعية. (هذه جملة تقريرية)
 
 \ta. ناقش أهمية القواعد الأصولية في فهم النصوص الشرعية. (${subMarks} درجات)
 \tb. بين كيف يتم التعامل مع التعارض الظاهري بين الأدلة. (${subMarks} درجات)
-\t[C4] [${coStr}] [${loStr}] [${domainStr}]`;
+\t[C4] [CO2]`;
       }
     } else if (isEnglish) {
       if (questionType === "objektif") {
         let beranakRuleNoteEng = "";
-        if (beranak > 0 && biasaCount === 0) {
-          beranakRuleNoteEng = `\nCRITICAL ORDER WARNING: ALL ${count} questions (From Question 1 to ${count}) MUST be BRANCHED questions (with roman numerals i, ii, iii, iv). DO NOT generate any regular questions!`;
+        if (beranak === 0) {
+          beranakRuleNoteEng = `\nCRITICAL WARNING: ALL ${count} questions MUST be REGULAR SINGLE objective questions. DO NOT generate any branched questions.`;
+        } else if (beranak > 0 && biasaCount === 0) {
+          beranakRuleNoteEng = `\nCRITICAL ORDER WARNING: ALL ${count} questions (From Question 1 to ${count}) MUST be BRANCHED questions (with roman numerals). DO NOT generate any regular questions!`;
         } else if (beranak > 0) {
-          beranakRuleNoteEng = `\nCRITICAL ORDER WARNING (YOU MUST STRICTLY FOLLOW THIS SEQUENCE):
-- Question numbers 1 to ${biasaCount}: MUST be REGULAR objective questions.
-- Question numbers ${biasaCount + 1} to ${count}: MUST be BRANCHED objective questions (with i, ii, iii, iv).`;
+          beranakRuleNoteEng = `\nCRITICAL ORDER AND QUANTITY WARNING (YOU MUST STRICTLY FOLLOW THIS):
+- REGULAR QUESTIONS AMOUNT: Exactly ${biasaCount} questions. (Question numbers 1 to ${biasaCount} MUST be REGULAR objective questions).
+- BRANCHED QUESTIONS AMOUNT: Exactly ${beranak} questions. (Question numbers ${biasaCount + 1} to ${count} MUST be BRANCHED objective questions with roman numerals).
+DO NOT change these exact amounts!`;
         }
 
         formatInstructions = `
 STRICT QUANTITY REQUIREMENT:
-- TOTAL QUESTIONS: EXACTLY ${count} QUESTIONS (numbered 1 to ${count}).
+- TOTAL QUESTIONS: EXACTLY ${count} QUESTIONS.
+- CRITICAL WARNING: STOP GENERATING IMMEDIATELY AFTER QUESTION ${count}.
 ${beranakRuleNoteEng}
 
+STRICT BLOOM'S TAXONOMY INDEX MAPPING:
+${bloomMappingEn}
+
+STRICT OBJECTIVE STRUCTURE WARNING (MUST READ):
+1. MUST HAVE OPTIONS: Every objective question MUST have exactly 4 answer options (A, B, C, and D). NEVER generate a question without answer options!
+2. NO DOUBLE QUESTIONS: DO NOT ask two separate questions (two question marks '?') in the same item.
+3. C1 & C2 QUESTIONS: DO NOT use declarative statements for C1 and C2. You MUST start directly with the question (e.g., "What is...", "How does...").
+4. C3 TO C6 QUESTIONS: You are allowed to use a short statement before the question.
+5. PARAGRAPH SPACING (CRITICAL): For Regular Questions, if using a statement, it MUST be merged with the question on the SAME line (NO ENTER). BUT for Branched Questions, the statement and the question MUST be separated by EXACTLY ONE BLANK LINE (ENTER)!
+
 REGULAR OBJECTIVE INSTRUCTIONS:
-- Use diverse academic question starters. Each option MUST be a distinct statement.
-- ALIGNMENT RULE: You MUST place exactly 1 Tab (\\t) immediately after the question number, and 1 Tab (\\t) before all options.
-EXAMPLE:
-1.\tHow is the fundamental definition expressed?
+- For regular objective questions, DO NOT leave a blank line between the statement and the question. Keep them in the exact same paragraph.
+- You MUST leave exactly ONE BLANK LINE before starting the A, B, C, D options.
+EXAMPLE for C3-C6 (Statement and Question merged):
+1.\tIntegration serves as a foundational concept. How is this concept applied in advanced calculus?
 
 \tA. As the limit of the rate
 \tB. As the maximum value
 \tC. As the definite integral
 \tD. As the static slope
-\t[C3] [${coStr}] [${loStr}] [${domainStr}]
+\t[C3] [CO2]
 
 BRANCHED OBJECTIVE INSTRUCTIONS:
-- Must start with 1 context statement, 1 follow-up question, 4 roman items (i, ii, iii, iv) and 4 options.
-- ALIGNMENT RULE: ALL lines after the question number MUST start with exactly 1 Tab (\\t) for vertical alignment.
-EXAMPLE:
+- The very first line (the numbered line) MUST ONLY be a DECLARATIVE FACTUAL STATEMENT ending with a full stop (.). DO NOT put a question mark (?) or question words on this first line!
+- Then, LEAVE A BLANK LINE (Press Enter), and ask ONE formally complete question based on the statement.
+
+[WRONG EXAMPLE - DO NOT DO THIS]:
+2. Astronomy is important. What is its application? (WRONG: Has a question mark on the first line)
+
+What is the relevant application? (WRONG: Asking question twice)
+
+[CORRECT EXAMPLE - MUST FOLLOW]:
 2.\tThe function f(x) = x^2 represents a parabola.
 
-\tBased on the statement above, which properties hold true?
+\tBased on the statement above, which properties are the most accurate?
 
 \ti. The value equals 6
 \tii. The rate of change is positive
@@ -412,57 +581,93 @@ EXAMPLE:
 \tB. ii and iii
 \tC. i, ii, and iii
 \tD. All of the above
-\t[C4] [${coStr}] [${loStr}] [${domainStr}]`;
+\t[C4] [CO2]`;
       } else if (questionType === "true_false") {
-        formatInstructions = `Format True / False (${count} questions). EXAMPLE:
+        formatInstructions = `Format True / False (${count} questions). 
+- CRITICAL WARNING: STOP GENERATING IMMEDIATELY AFTER QUESTION ${count}.
+${bloomMappingEn}
+EXAMPLE:
 1.\tThe derivative of a constant function is always zero.
 
 \t[TRUE] [FALSE]
-\t[C1] [${coStr}] [${loStr}] [${domainStr}]`;
+\t[C1] [CO1]`;
       } else {
-        formatInstructions = `Format Essay (${count} questions). EXAMPLE:
-1.\tIntegration serves as a foundational concept.
+        formatInstructions = `Format Essay (${count} questions).
+- CRITICAL WARNING: STOP GENERATING IMMEDIATELY AFTER QUESTION ${count}.
+${bloomMappingEn} 
+${bloomVerbsInstruction}
+
+RULES FOR ESSAY:
+1. The main stem (number 1, 2...) MUST ONLY be a DECLARATIVE FACTUAL STATEMENT ending with a full stop (.). DO NOT start the main stem with a question or command word, and NEVER end it with a question mark (?)!
+2. Bloom's command verbs MUST ONLY be used in the sub-questions ('a.' and 'b.').
+
+EXAMPLE:
+1.\tIntegration serves as a foundational concept in advanced calculus. (THIS IS A FACTUAL STATEMENT)
 
 \ta. Explain the process of evaluating a definite integral. (${subMarks} Marks)
 \tb. Derive the rate of change for the differential equation. (${subMarks} Marks)
-\t[C4] [${coStr}] [${loStr}] [${domainStr}]`;
+\t[C4] [CO2]`;
       }
     } else {
       if (questionType === "objektif") {
         let beranakRuleNote = "";
-        if (beranak > 0 && biasaCount === 0) {
-          beranakRuleNote = `\nAMARAN KETAT SUSUNAN: KESEMUA ${count} soalan (Dari Soalan 1 hingga ${count}) MESTILAH SOALAN BERANAK (beritem roman i, ii, iii, iv). JANGAN jana soalan biasa!`;
+        if (beranak === 0) {
+          beranakRuleNote = `\nAMARAN SANGAT KETAT: KESEMUA ${count} soalan MESTILAH SOALAN BIASA TUNGGAL. DILARANG KERAS menghasilkan sebarang soalan beranak/berlapis.`;
+        } else if (beranak > 0 && biasaCount === 0) {
+          beranakRuleNote = `\nAMARAN KETAT SUSUNAN: KESEMUA ${count} soalan MESTILAH SOALAN BERANAK (beritem roman i, ii, iii, iv). JANGAN jana soalan biasa!`;
         } else if (beranak > 0) {
-          beranakRuleNote = `\nAMARAN KETAT SUSUNAN SOALAN (ANDA WAJIB PATUH URUTAN INI):
-- Soalan nombor 1 hingga ${biasaCount}: MESTILAH SOALAN BIASA SAHAJA (Tiada roman).
-- Soalan nombor ${biasaCount + 1} hingga ${count}: MESTILAH SOALAN BERANAK (Wajib ada i, ii, iii, iv).`;
+          beranakRuleNote = `\nAMARAN KETAT SUSUNAN & KUANTITI SOALAN (ANDA WAJIB PATUH 100%):
+- JUMLAH SOALAN BIASA: Tepat ${biasaCount} soalan. (Soalan nombor 1 hingga ${biasaCount} MESTILAH SOALAN BIASA SAHAJA tanpa item roman).
+- JUMLAH SOALAN BERANAK: Tepat ${beranak} soalan. (Soalan nombor ${biasaCount + 1} hingga ${count} MESTILAH SOALAN BERANAK beritem roman i, ii, iii, iv).
+DILARANG menambah atau mengurangkan kuantiti ini!`;
         }
 
         formatInstructions = `
 PENGATURAN KUANTITI SOALAN (AMARAN SANGAT MUTLAK):
-- JUMLAH KESELURUHAN SOALAN: TEPAT ${count} SOALAN (bernombor 1 hingga ${count}).
+- JUMLAH KESELURUHAN SOALAN: TEPAT ${count} SOALAN SAHAJA.
+- AMARAN KERAS: ANDA WAJIB BERHENTI MENJANA SEBAIK SAHAJA SOALAN KE-${count} SELESAI!
 ${beranakRuleNote}
-${bloomVerbsInstruction}
 
-ARAHAN SOALAN BIASA:
-- Bina soalan objektif.
-- ATURAN KEDUDUKAN SELARI: Anda WAJIB meletakkan 1 Tab (\\t) TEPAT selepas nombor soalan, dan 1 Tab (\\t) sebelum kesemua pilihan jawapan.
-CONTOH:
-1.\tApakah tujuan utama Falsafah Pendidikan Kebangsaan?
+PETA SUSUNAN ARAS BLOOM & RUBRIK CO (WAJIB DIPATUHI 100%):
+${bloomMappingMs}
 
-\tA. Membangunkan jiwa rohani dan akal budi
-\tB. Menghapuskan sekolah vernakular
-\tC. Meningkatkan kebolehpasaran kerja
-\tD. Mengurangkan beban pelajar
-\t[C3] [${coStr}] [${loStr}] [${domainStr}]
+AMARAN KERAS STRUKTUR & TATABAHASA SOALAN OBJEKTIF (WAJIB BACA):
+1. WAJIB ADA PILIHAN JAWAPAN (A, B, C, D): Setiap soalan yang dijana WAJIB mempunyai tepat 4 pilihan jawapan. JANGAN SESEKALI tinggalkan soalan tanpa memberikan pilihan jawapan! Ini adalah soalan objektif!
+2. LARANGAN DUA SOALAN: DILARANG SAMA SEKALI terdapat DUA ayat pertanyaan (dua tanda soal '?') dalam satu nombor soalan yang sama. Hanya SATU tanda soal dibenarkan.
+3. GAYA SOALAN C1 & C2: DILARANG menggunakan sebarang ayat penyata (stimulus) di awal soalan bagi aras C1 dan C2. WAJIB terus gunakan soalan langsung (Direct Question) seperti "Apakah...", "Bagaimanakah...", "Manakah...".
+4. GAYA SOALAN C3 HINGGA C6: DIBENARKAN memulakan soalan dengan SATU ayat penyata ringkas, diikuti dengan persoalan. (Guna dengan kadar terkawal).
+5. PEMISAHAN AYAT (SANGAT PENTING): Untuk Soalan Biasa, jika ada penyata, ia MESTI ditaip bersambung dengan soalan dalam baris yang sama (TIADA ENTER). TETAPI, untuk Soalan Beranak, ayat penyata di baris pertama WAJIB DIPISAHKAN daripada ayat soalan di baris berikutnya dengan SATU BARIS KOSONG (ENTER)!
+6. "Siapakah" HANYA KHUSUS untuk orang atau tokoh. DILARANG menggunakan "Siapakah" untuk benda atau konsep.
+7. DILARANG menggunakan soalan tergantung seperti "dalam artikel ini" atau "dalam petikan ini".
+8. HARAM MENGGUNAKAN IMBUHAN "-lah": DILARANG SAMA SEKALI menggunakan perkataan berimbuhan seperti "Analisislah", "Jelaskanlah", "Bincangkanlah". Soalan objektif mestilah bertanyakan soalan secara terus.
 
-ARAHAN SOALAN BERANAK:
-- Mesti ada 1 ayat penyata awalan, diikuti 1 soalan susulan, 4 item roman (i, ii, iii, iv), dan 4 pilihan A, B, C, D.
-- ATURAN KEDUDUKAN SELARI: KESEMUA baris di bawah penomboran WAJIB dimulakan dengan 1 Tab (\\t) untuk memastikan jajaran menegak yang lurus.
-CONTOH:
-2.\tPenglibatan masyarakat penting dalam pembangunan.
+ARAHAN SOALAN BIASA (TUNGGAL):
+- SOALAN MESTI BERCANTUM: Ayat penyata dan ayat pertanyaan mesti berada dalam satu perenggan yang sama.
+- WAJIB TINGGALKAN SATU BARIS KOSONG (SELANG SEBARIS) sebelum bermulanya pilihan jawapan A, B, C, D.
+CONTOH LENGKAP C3-C6 (Penyata & Soalan Bercantum):
+1.\tFalsafah Pendidikan Kebangsaan menekankan aspek keseimbangan. Bagaimanakah aspek ini diterapkan dalam kurikulum sekolah?
 
-\tBerdasarkan pernyataan di atas, manakah antara berikut merupakan langkah yang wajar?
+\tA. Melalui pengasingan subjek sains dan sastera
+\tB. Dengan memperkenalkan subjek pendidikan rohani
+\tC. Melalui penglibatan pelajar dalam aktiviti kokurikulum secara holistik
+\tD. Mengurangkan waktu pembelajaran teori
+\t[C3] [CO2]
+
+AMARAN PALING KERAS UNTUK SOALAN BERANAK (BERLAPIS):
+- Baris PERTAMA yang bernombor (cth: "2.") WAJIB HANYA AYAT PENYATA FAKTA (Stimulus) yang diakhiri dengan titik (.).
+- DIHARAMKAN SAMA SEKALI meletakkan sebarang persoalan, kata tanya ("Apakah", "Bagaimanakah"), atau tanda soal (?) pada baris pertama ini! Jika anda letak tanda soal di baris pertama, ia adalah SALAH!
+- WAJIB TEKAN 'ENTER' (SELANG SEBARIS)!
+- Barulah kemukakan HANYA SATU soalan formal pada baris baharu.
+
+[CONTOH SALAH - JANGAN BUAT BEGINI!]:
+2. Astronomi penting. Apakah aplikasinya? (SALAH: Ada tanda soal di baris pertama)
+
+Apakah aplikasi yang relevan? (SALAH: Soalan berulang dua kali)
+
+[CONTOH BETUL - WAJIB IKUT]:
+2.\tPendidikan yang berteraskan Falsafah Pendidikan Kebangsaan perlu mengambil kira pelbagai aspek penting.
+
+\tManakah antara berikut merupakan aspek yang paling utama bagi mencapai hasrat tersebut?
 
 \ti. Kurikulum yang inklusif
 \tii. Pengajaran bahasa ibunda
@@ -473,28 +678,32 @@ CONTOH:
 \tB. ii dan iii
 \tC. i, ii dan iii
 \tD. Semua di atas
-\t[C4] [${coStr}] [${loStr}] [${domainStr}]`;
+\t[C4] [CO2]`;
       } else if (questionType === "true_false") {
-        formatInstructions = `Format Benar / Salah (${count} soalan). CONTOH WAJIB:
+        formatInstructions = `Format Benar / Salah (${count} soalan). 
+- AMARAN KERAS: ANDA WAJIB BERHENTI MENJANA SEBAIK SAHAJA SOALAN KE-${count} SELESAI.
+${bloomMappingMs}
+CONTOH WAJIB:
 1.\tAspirasi negara bangsa adalah penting.
 
 \t[BENAR] [SALAH]
-\t[C1] [${coStr}] [${loStr}] [${domainStr}]`;
+\t[C1] [CO1]`;
       } else {
-        formatInstructions = `Format Esei (${count} soalan). CONTOH WAJIB:
+        formatInstructions = `Format Esei (${count} soalan). 
+- AMARAN KERAS: ANDA WAJIB BERHENTI MENJANA SEBAIK SAHAJA SOALAN KE-${count} SELESAI.
+${bloomMappingMs}
 ${bloomVerbsInstruction}
+
+PERATURAN FORMAT ESEI & TATABAHASA (AMARAN KERAS MUTLAK):
+1. KEPALA SOALAN (sebelah nombor 1, 2, 3...) WAJIB merupakan AYAT PENYATA LENGKAP (Fakta/Stimulus) yang DITAMATKAN DENGAN TITIK (.). DILARANG SAMA SEKALI memulakan kepala soalan dengan kata perintah, dan DILARANG mengakhirinya dengan tanda soal (?)!
+2. KATA PERINTAH BLOOM HANYA BOLEH DIGUNAKAN PADA ANAK SOALAN ('a.' dan 'b.') SAHAJA. (Pastikan ia adalah ayat perintah murni bebas imbuhan Me, Meng, Men - Contoh yang betul: "Bincangkan", "Huraikan", "Nilaikan", "Rekaciptakan").
+
 CONTOH STRUKTUR ESEI WAJIB PATUH:
-1.\tPendidikan memainkan peranan signifikan dalam pembangunan negara. Sistem ini memupuk nilai kebersamaan.
+1.\tPendidikan memainkan peranan signifikan dalam pembangunan negara dan pembentukan jati diri bangsa. (INI ADALAH AYAT PENYATA LENGKAP)
 
 \ta. Bincangkan peranan pendidikan dalam memupuk patriotisme. (${subMarks} Markah)
-\tb. Huraikan langkah proaktif oleh pihak sekolah dalam memperkasa nilai murni. (${subMarks} Markah)
-\t[C4] [${coStr}] [${loStr}] [${domainStr}]
-
-PERATURAN FORMAT ESEI & TATABAHASA KATA PERINTAH (AMARAN KERAS):
-1. Setiap soalan esei WAJIB ada penyataan utama, diikuti anak soalan 'a.' dan 'b.' berserta agihan markah '(X Markah)'.
-2. DILARANG SAMA SEKALI meletakkan sebarang kurungan Bloom (seperti (C1), (C2)) di mana-mana bahagian dalam teks soalan atau penyataan!
-3. TATABAHASA KATA PERINTAH: Anda mesti menggunakan kata tugas perintah yang diarahkan (Contoh: "Analisis...", "Huraikan...", "Bezakan...", "Ilustrasikan..."). DILARANG memulakan soalan arahan dengan imbuhan kata kerja aktif seperti "Menganalisis", "Mengilustrasi", "Menghuraikan". Gunakan KATA SURUHAN secara terus pada anak soalan 'a.' dan 'b.'.
-4. Tag JSU ([C4] [${coStr}] [${loStr}] [${domainStr}]) WAJIB diletakkan di baris terakhir sekali (di bawah anak soalan b) bagi setiap soalan esei, dan WAJIB di-tab (\\t).`;
+\tb. Huraikan langkah proaktif oleh pihak sekolah. (${subMarks} Markah)
+\t[C4] [CO2]`;
       }
     }
 
@@ -507,13 +716,17 @@ PERATURAN FORMAT ESEI & TATABAHASA KATA PERINTAH (AMARAN KERAS):
 1. يجب عليك إنشاء الأسئلة بناءً على النص المرفق أدناه فقط بنسبة 100%.
 2. يُمنع منعاً باتاً اختراع أو إدخال أي مواضيع عامة خارج نطاق النص المرفق.
 
-قم بإنشاء ${count} أسئلة بالضبط (بدون نموذج الإجابة).
+${RUBRIK_AKADEMIK}
+
+قم بإنشاء ${count} أسئلة بالضبط.
 ${formatInstructions}
 
 قواعد مطلقة:
-1. وسم JSU ([C3] [${coStr}] [${loStr}] [${domainStr}]) يجب وضعه في السطر الأخير لكل سؤال ويكون محاذى بـ Tab (\\t). استبدل C3 بـ: ${bloomStr}.
+1. وسم JSU الكامل يجب وضعه في السطر الأخير لكل سؤال ويكون محاذى بـ Tab (\\t). (وسمين فقط: مستويات بلوم و CO).
 2. يُمنع استخدام النجوم (* أو **).
-3. يُمنع كتابة عناوين الأقسام.
+3. يمنع منعا باتا كتابة تعليقات أو تبريرات أو شرح لخياراتك داخل ورقة الأسئلة. فقط اكتب الأسئلة والخيارات والوسم النهائي.
+4. للأسئلة الموضوعية: يجب عليك توفير 4 خيارات (A, B, C, D) لكل سؤال. لا تترك أي سؤال بدون خيارات.
+5. توزيع المواضيع: يجب تنويع الأسئلة لتشمل جميع المواضيع في النص المعطى بشكل متوازن. لا تركز فقط على موضوع واحد إذا كانت هناك مواضيع أخرى.
 
 سياق الملاحظات:
 ${finalContext}`;
@@ -525,13 +738,17 @@ STRICT CONTEXT GROUNDING RULE:
 1. You MUST generate questions 100% EXCLUSIVELY and STRICTLY based on the facts present in the COURSE NOTES / CONTEXT provided below.
 2. DO NOT hallucinate or introduce outside general knowledge facts!
 
-GENERATE EXACTLY ${count} QUESTIONS ONLY (NO ANSWER SCHEME/SOLUTIONS).
+${RUBRIK_AKADEMIK}
+
+GENERATE EXACTLY ${count} QUESTIONS ONLY.
 ${formatInstructions}
 
 ABSOLUTE RULES:
-1. JSU TAG ([C3] [${coStr}] [${loStr}] [${domainStr}]) MUST be placed at the very bottom line of every question and MUST be indented with 1 tab (\\t). Replace C3 with: ${bloomStr}.
+1. FULL JSU TAG MUST be placed at the very bottom line of every question and MUST be indented with 1 tab (\\t). (EXACTLY 2 TAGS: Bloom and CO).
 2. DO NOT use bullet points (* or **).
-3. DO NOT write section headers.
+3. STRICT PROHIBITION: DO NOT write any comments, rationale, justifications, or Bloom's explanations inside the question paper. ONLY output the questions, options, and the final tag.
+4. FOR OBJECTIVE QUESTIONS: You MUST provide 4 options (A, B, C, D) for every single question. NEVER leave a question without options.
+5. TOPIC DISTRIBUTION: You MUST vary the questions to cover ALL topics provided in the context evenly. DO NOT focus repeatedly on a single topic if other topics are present.
 
 COURSE NOTES CONTEXT:
 ${finalContext}`;
@@ -542,16 +759,17 @@ ARAHAN PENGIKATAN DOKUMEN / NOTA (STRICT CONTEXT GROUNDING MUTLAK):
 1. Anda WAJIB menggubal soalan 100% BERDASARKAN DAN BERSUMBERKAN TEKS NOTA KURSUS di bawah SAHAJA.
 2. DILARANG SAMA SEKALI mereka-reka atau membawa masuk fakta am di luar kandungan dokumen!
 
-ARAHAN KATA KERJA BLOOM (SANGAT MUTLAK):
-Anda MESTI membina anak-anak soalan menggunakan Kata Tugas / Kata Perintah yang disenaraikan mengikut Aras Bloom yang dipilih ($C1-$C6).
+${RUBRIK_AKADEMIK}
 
-JANA TEPAT ${count} SOALAN SAHAJA (TANPA SKEMA/JAWAPAN).
+JANA TEPAT ${count} SOALAN SAHAJA.
 ${formatInstructions}
 
-PERATURAN MUTLAK:
-1. TAG JSU ([C3] [${coStr}] [${loStr}] [${domainStr}]) WAJIB ada di baris akhir setiap soalan dan WAJIB di-tab (\\t). Ganti C3 dengan aras Bloom yang sedang anda gunakan, contoh: ${bloomStr}.
+PERATURAN MUTLAK KERTAS SOALAN:
+1. TAG JSU LENGKAP WAJIB ada di baris akhir setiap soalan dan WAJIB di-tab (\\t). Rujuk Peta Susunan yang diberi. (TEPAT 2 TAG SAHAJA: Bloom dan CO).
 2. DILARANG menggunakan tanda bintik (* atau **).
-3. DILARANG meletakkan sebarang tajuk bahagian.
+3. AMARAN KERAS: DILARANG SAMA SEKALI menulis ulasan, rasional, justifikasi rubrik atau sebarang nota penerangan di dalam kertas soalan! Anda hanya dibenarkan mencetak TEKS SOALAN, PILIHAN JAWAPAN, dan TAG JSU SAHAJA.
+4. BUKAN SOALAN SUBJEKTIF: Ini adalah soalan Objektif. Anda WAJIB menjana tepat 4 pilihan jawapan (A, B, C, D) bagi SETIAP soalan sebelum meletakkan tag JSU.
+5. PENGAGIHAN TOPIK: Anda WAJIB memvariasikan soalan merangkumi KESELURUHAN topik/konteks yang diberikan secara seimbang. JANGAN tertumpu pada satu topik berulang kali (contohnya Falsafah Pendidikan Kebangsaan) jika ada topik lain di dalam nota.
 
 NOTA KURSUS:
 ${finalContext}`;
@@ -575,14 +793,18 @@ ${finalContext}`;
     const finalCleanData = cleanAndTransformQuestions(rawOutput, language, questionType);
 
     // ============================================================
-    // PEMASUKAN AUTOMATIK KE SUPABASE (PECAH KEPADA KAD INDIVIDU)
+    // PEMASUKAN AUTOMATIK KE SUPABASE
     // ============================================================
     if (targetSubjectId) {
       const individualQuestions = splitIntoIndividualQuestions(finalCleanData);
-      if (individualQuestions.length > 0) {
-        const insertPayload = individualQuestions.map((qText) => {
+      const exactQuestions = individualQuestions.slice(0, count);
+
+      if (exactQuestions.length > 0) {
+        const insertPayload = exactQuestions.map((qText) => {
           const bloomMatch = qText.match(/\[(C[1-6]\vert{}P[1-5]\vert{}A[1-5])\]/i);
-          const detectedBloom = bloomMatch ? bloomMatch[1].toUpperCase() : (bloomStr || "C1");
+          const detectedBloom = bloomMatch ? bloomMatch[1].toUpperCase() : "C1";
+
+          const coMatch = qText.match(/\[(CO\d*)\]/i);
 
           return {
             subject_id: targetSubjectId,
@@ -591,8 +813,8 @@ ${finalContext}`;
             marks: questionType === "objektif" ? 1 : totalSectionMarks / count,
             bloom_level: detectedBloom,
             difficulty: "Sederhana",
-            co_code: coStr,
-            lo_code: loStr,
+            co_code: coMatch ? coMatch[1].toUpperCase() : (formattedCOs.length > 0 ? formattedCOs[0] : 'CO1'),
+            lo_code: 'LO1', 
           };
         });
 

@@ -2,13 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation'; // TAMBAHAN ROUTER
+import { useRouter } from 'next/navigation';
 
 const BLOOM_OPTIONS = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'P1', 'P2', 'P3', 'P4', 'P5', 'A1', 'A2', 'A3', 'A4', 'A5'];
 const DIFFICULTY_OPTIONS = ['Mudah', 'Sederhana', 'Sukar'];
 
 export default function BankSoalanPage() {
-  const router = useRouter(); // INAKTIFAKN ROUTER
+  const router = useRouter(); 
   const [questions, setQuestions] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -121,14 +121,11 @@ export default function BankSoalanPage() {
     fetchQuestions();
   }, [selectedSubjectFilter]);
 
-  // FUNGSI JANA SOALAN PINTAR (HANTAR ID KE PAGE JANA-SOALAN)
   const handleJanaSoalanRoute = () => {
     if (selectedQuestionIds.length > 0) {
-      // Jika ada soalan dipilih secara manual, simpan dalam LocalStorage dan bawa ke mod manual
       localStorage.setItem('manual_jsu_ids', JSON.stringify(selectedQuestionIds));
       router.push(`/jana-soalan?mode=manual&subject=${selectedSubjectFilter}`);
     } else {
-      // Jika tiada pilihan, pergi ke page JSU seperti biasa
       router.push('/jana-soalan');
     }
   };
@@ -137,6 +134,27 @@ export default function BankSoalanPage() {
     e.preventDefault();
     if (!formSubjectId) return alert('Sila pilih subjek.');
     if (!formQuestionText.trim()) return alert('Sila masukkan teks soalan.');
+
+    // ============================================================
+    // PENAPIS ANTI-DUPLIKASI UNTUK SOALAN MANUAL
+    // ============================================================
+    const normalizeText = (str: string) => {
+      return str
+        .replace(/^(?:\d+[\.\)]|BAHAGIAN\s+[A-Z]:?|PART\s+[A-Z]:?)\s*/gi, '') 
+        .replace(/\\?\[\s*(?:Aras|Level|CO\d*|LO\d*|PO\d*|C\d+|P\d+|A\d*)[^\]]*\\?\]/gi, '') 
+        .replace(/\s+/g, ' ') 
+        .trim()
+        .toLowerCase();
+    };
+
+    const cleanNewQuestion = normalizeText(formQuestionText);
+    const isDuplicate = questions.some(q => normalizeText(q.question_text || '') === cleanNewQuestion);
+
+    if (isDuplicate) {
+      alert('⚠️ Gagal: Soalan yang serupa telah sedia ada di dalam Bank Soalan untuk kursus ini!');
+      return;
+    }
+    // ============================================================
 
     setIsSubmitting(true);
     try {
@@ -356,7 +374,6 @@ export default function BankSoalanPage() {
                 </button>
               )}
 
-              {/* BUTANG JANA SOALAN DINAMIK */}
               <button onClick={handleJanaSoalanRoute} style={{
                 backgroundColor: selectedQuestionIds.length > 0 ? '#f59e0b' : '#10b981',
                 color: 'white',
@@ -372,7 +389,7 @@ export default function BankSoalanPage() {
                 boxShadow: '0 4px 10px rgba(0,0,0,0.15)',
                 transition: 'all 0.2s'
               }}>
-                ⚙️ {selectedQuestionIds.length > 0 ? `Jana Manual (${selectedQuestionIds.length} Soalan)` : 'Jana Auto JSU'}
+                ⚙️️ {selectedQuestionIds.length > 0 ? `Jana Manual (${selectedQuestionIds.length} Soalan)` : 'Jana Auto JSU'}
               </button>
 
               <button style={styles.btnPrimary} onClick={() => setIsModalOpen(true)}>
@@ -469,7 +486,7 @@ export default function BankSoalanPage() {
                   ...styles.card, 
                   marginBottom: 0, 
                   borderLeft: '5px solid #312e81',
-                  backgroundColor: selectedQuestionIds.includes(q.id) ? '#fef3c7' : '#ffffff', // Warna kuning lembut jika tick
+                  backgroundColor: selectedQuestionIds.includes(q.id) ? '#fef3c7' : '#ffffff',
                   borderColor: selectedQuestionIds.includes(q.id) ? '#f59e0b' : '#e2e8f0',
                   transition: 'all 0.2s'
                 }}
