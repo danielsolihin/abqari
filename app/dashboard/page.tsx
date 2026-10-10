@@ -1,12 +1,17 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 
 // Senarai Rujukan C, P, A dan LO yang dikemas kini
 const C_LIST = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6'];
 const P_LIST = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'];
 const A_LIST = ['A1', 'A2', 'A3', 'A4', 'A5'];
 const LO_LIST = ['LO1', 'LO2', 'LO3', 'LO4', 'LO5', 'LO6', 'LO7', 'LO8', 'LO9', 'LO10', 'LO11'];
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function DashboardPage() {
   // ==========================================
@@ -35,15 +40,53 @@ export default function DashboardPage() {
   // ==========================================
   // STATE BAHARU UNTUK C/P/A & LO + EDIT SUBJEK
   // ==========================================
-  // Nota: selectedCOs dikekalkan namanya untuk API/Database, 
-  // tetapi ia kini menyimpan nilai C, P, dan A.
   const [selectedCOs, setSelectedCOs] = useState<string[]>([]);
   const [selectedLOs, setSelectedLOs] = useState<string[]>([]);
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
 
   // ==========================================
-  // FUNGSI FETCH SEDIA ADA (Dikekalkan)
+  // STATE STATISTIK DAN PENGGUNA
   // ==========================================
+  const [userProfile, setUserProfile] = useState<{name: string, email: string}>({ name: '', email: '' });
+  const [archiveCount, setArchiveCount] = useState(0);
+
+  const getAuthHeaders = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+    } catch (e) {
+      return {};
+    }
+  };
+
+  // ==========================================
+  // FUNGSI FETCH SEDIA ADA & STATISTIK
+  // ==========================================
+  const fetchUserDataAndStats = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const meta = session.user.user_metadata || {};
+        const fullName = meta.full_name || meta.name || session.user.email?.split('@')[0] || '';
+        setUserProfile({ name: fullName, email: session.user.email || '' });
+
+        // PENYELESAIAN RALAT 400 (ARCHIVES): Gunakan user_name dan bukannya user_id
+        if (fullName) {
+          const { count, error } = await supabase
+            .from('archives')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_name', fullName);
+          
+          if (!error && count !== null) {
+            setArchiveCount(count);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Ralat mengambil data pengguna:', error);
+    }
+  };
+
   const fetchDocuments = async () => {
     setIsLoading(true);
     try {
@@ -59,15 +102,37 @@ export default function DashboardPage() {
 
   const fetchSubjects = async () => {
     try {
-      const res = await fetch('/api/subjects');
-      const json = await res.json();
-      if (json.success) setSubjects(json.data);
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      const isAdmin = user ? (['admin@uitm.edu.my', 'syahiran@uitm.edu.my'].includes(user.email || '') || user.user_metadata?.role === 'admin') : false;
+
+      let query = supabase.from('subjects').select('*').order('created_at', { ascending: false });
+
+      if (!isAdmin && user) {
+        query = query.eq('user_id', user.id);
+      }
+
+      const { data, error } = await query;
+
+      if (!error && data) {
+        setSubjects(data);
+      } else {
+        const authHeaders = await getAuthHeaders();
+        const response = await fetch('/api/subjects', { headers: { ...authHeaders } });
+        const text = await response.text();
+        const json = text ? JSON.parse(text) : {};
+        if (json && json.success && Array.isArray(json.data)) {
+           const filteredData = isAdmin ? json.data : json.data.filter((s: any) => s.user_id === user?.id);
+           setSubjects(filteredData);
+        }
+      }
     } catch (error) {
       console.error('Ralat mengambil subjek:', error);
     }
   };
 
   useEffect(() => {
+    fetchUserDataAndStats();
     fetchDocuments();
     fetchSubjects();
   }, []);
@@ -131,7 +196,6 @@ export default function DashboardPage() {
            alert('Subjek baharu berjaya ditambah!');
         }
         
-        // Reset form
         setNewSubjectName('');
         setNewCourseCode('');
         setSelectedCOs([]);
@@ -247,8 +311,13 @@ export default function DashboardPage() {
   return (
     <div className="dashboard-container">
       <div className="dashboard-header">
-        <h1>Papan Pemuka Pentadbir</h1>
+        <h1>Papan Pemuka Pentadbir / Pusat Sumber</h1>
         <p>Uruskan fail PDF dan subjek sistem anda di sini.</p>
+        
+        {/* Paparan ringkas statistik arkib yang dibaiki */}
+        <div style={{ marginTop: '10px', display: 'inline-block', backgroundColor: 'rgba(255,255,255,0.1)', padding: '5px 15px', borderRadius: '20px', fontSize: '0.9rem' }}>
+          Jumlah Soalan Dijana (Arkib): <strong>{archiveCount}</strong>
+        </div>
       </div>
 
       <div className="dashboard-content">
@@ -284,7 +353,7 @@ export default function DashboardPage() {
                 <option value="">Semua Subjek</option>
                 {subjects.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.course_code === 'TIADA' ? '' : `${s.course_code} - `}{s.name}
+                    {s.course_code === 'TIADA' ? '' : `${s.course_code} `}{s.name}
                   </option>
                 ))}
               </select>
@@ -354,7 +423,7 @@ export default function DashboardPage() {
                       <option value="">-- Pilih Subjek --</option>
                       {subjects.map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.course_code === 'TIADA' ? '' : `${s.course_code} - `}{s.name}
+                          {s.course_code === 'TIADA' ? '' : `${s.course_code} `}{s.name}
                         </option>
                       ))}
                     </select>

@@ -26,7 +26,7 @@ export async function GET() {
       full_name: user.user_metadata?.full_name || user.user_metadata?.name || 'Tiada Nama',
       role: user.user_metadata?.role || 'pensyarah',
       faculty: user.user_metadata?.faculty || '-',
-      phone: user.user_metadata?.phone_number || '-',
+      phone: user.user_metadata?.phone_number || user.user_metadata?.phone || '-',
       is_approved: user.user_metadata?.is_approved || false,
       status: user.user_metadata?.status || 'pending',
       created_at: user.created_at,
@@ -88,7 +88,7 @@ export async function DELETE(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
-    const { userId, action } = body;
+    const { userId, action, profileData } = body;
 
     if (!userId) throw new Error('ID Pengguna diperlukan.');
 
@@ -102,8 +102,24 @@ export async function PATCH(req: NextRequest) {
       const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
       if (error) throw error;
     }
+    // TAMBAHAN: Logik baharu untuk menyambut arahan kemas kini profil (Edit Modal)
+    else if (action === 'update_profile') {
+      if (!profileData) throw new Error('Data profil baharu diperlukan.');
+      
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+        user_metadata: { 
+          full_name: profileData.full_name,
+          name: profileData.name,
+          faculty: profileData.faculty,
+          phone_number: profileData.phone,
+          phone: profileData.phone,
+          role: profileData.role
+        }
+      });
+      if (error) throw error;
+    }
 
-    return NextResponse.json({ success: true, message: 'Status dikemas kini.' });
+    return NextResponse.json({ success: true, message: 'Status/Maklumat dikemas kini.' });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }

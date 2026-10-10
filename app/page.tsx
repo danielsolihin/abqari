@@ -88,14 +88,16 @@ export default function DashboardUtama() {
         setIsAdmin(isAdminUser);
 
         const meta = user.user_metadata || {};
+        const fullName = meta.full_name || meta.name || user.email?.split('@')[0] || 'Pensyarah';
+
         setUserProfile({
-          name: meta.full_name || meta.name || user.email?.split('@')[0] || 'Pensyarah',
+          name: fullName,
           faculty: meta.faculty || 'Fakulti / Jabatan',
           email: user.email || '',
           avatarUrl: meta.avatar_url || null,
         });
         
-        setEditName(meta.full_name || meta.name || '');
+        setEditName(fullName);
         setEditPhone(meta.phone_number || '');
         setEditFaculty(meta.faculty || '');
 
@@ -103,10 +105,11 @@ export default function DashboardUtama() {
         let docQ = supabase.from('documents').select('*', { count: 'exact', head: true });
         let arcQ = supabase.from('archives').select('*', { count: 'exact', head: true });
 
+        // PEMBETULAN: Gunakan user_name untuk archives, BUKAN user_id
         if (!isAdminUser) {
           subQ = subQ.eq('user_id', user.id);
           docQ = docQ.eq('user_id', user.id);
-          arcQ = arcQ.eq('user_id', user.id);
+          arcQ = arcQ.eq('user_name', fullName);
         }
 
         const [
@@ -125,7 +128,7 @@ export default function DashboardUtama() {
             });
             const json = await res.json();
             if (json.success && Array.isArray(json.data)) {
-              const archivesData = isAdminUser ? json.data : json.data.filter((a: any) => a.user_id === user.id);
+              const archivesData = isAdminUser ? json.data : json.data.filter((a: any) => a.user_name === fullName);
               finalArchiveCount = archivesData.length;
             }
           } catch (e) {
@@ -133,7 +136,6 @@ export default function DashboardUtama() {
           }
         }
 
-        // KEMAS KINI: Tarik data pengguna melalui API Backend (Bebas dari RLS)
         let totalUsers = 1;
         let pendingUsersCount = 0;
         
@@ -422,7 +424,6 @@ export default function DashboardUtama() {
 
   return (
     <div style={styles.page}>
-      {/* CSS Animasi untuk Blinking Tag */}
       <style>{`
         @keyframes blinkAnim {
           0% { opacity: 1; transform: scale(1); }
@@ -610,7 +611,6 @@ export default function DashboardUtama() {
             </div>
           </div>
 
-          {/* KOTAK PENGGUNA BERDAFTAR BERSERTA BLINKING TAG (HANYA ADMIN) */}
           {isAdmin && (
             <div style={styles.statCard}>
               <div style={{ backgroundColor: 'rgba(255,255,255,0.12)', padding: '10px', borderRadius: '10px' }}>
@@ -621,7 +621,6 @@ export default function DashboardUtama() {
                 <p style={{ margin: 0, fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '600' }}>Pengguna Berdaftar</p>
               </div>
 
-              {/* INDIKATOR KELIP JIKA ADA PENDAFTARAN BAHARU */}
               {!isLoadingStats && stats.pendingUsers > 0 && (
                 <div style={{
                   position: 'absolute', 

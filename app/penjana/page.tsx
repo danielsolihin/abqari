@@ -168,7 +168,6 @@ const formatSubjectDisplay = (code: string, name: string) => {
   return n;
 };
 
-// SENARAI KATA-KATA HIKMAH, AL-QURAN & HADITH SEMASA PROSES PENJANAAN
 const islamicQuotes = [
   '📖 "Wahai Tuhanku, tambahkanlah kepadaku ilmu pengetahuan." — (Surah Taha: 114)',
   '✨ "Barangsiapa menempuh jalan untuk menuntut ilmu, Allah akan mudahkan baginya jalan ke syurga." — (HR. Muslim)',
@@ -216,7 +215,6 @@ export default function PenjanaSoalanPage() {
   const [generatedScheme, setGeneratedScheme] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
   
-  // State untuk fungsi simpan ke Bank Soalan
   const [isSavingBank, setIsSavingBank] = useState(false);
   const [isSavedBank, setIsSavedBank] = useState(false);
   
@@ -253,13 +251,23 @@ export default function PenjanaSoalanPage() {
     fetchUserProfile();
   }, []);
 
+  // PENYELESAIAN 1: TAPISAN SUBJEK UNTUK PENSYARAH BIASA SAHAJA
   useEffect(() => {
     const fetchSubjects = async () => {
       try {
-        const { data, error } = await supabase
-          .from('subjects')
-          .select('*')
-          .order('created_at', { ascending: false });
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
+        const isAdmin = user ? (['admin@uitm.edu.my', 'syahiran@uitm.edu.my'].includes(user.email || '') || user.user_metadata?.role === 'admin') : false;
+
+        let query = supabase.from('subjects').select('*').order('created_at', { ascending: false });
+
+        // Tapis mengikut pemilikan (jika bukan admin)
+        // NOTA: Jika DB anda menggunakan kolum nama lain (cth: 'created_by'), tukarkan 'user_id' di bawah ini
+        if (!isAdmin && user) {
+          query = query.eq('user_id', user.id);
+        }
+
+        const { data, error } = await query;
 
         if (!error && data) {
           setSubjects(data);
@@ -268,8 +276,10 @@ export default function PenjanaSoalanPage() {
           const response = await fetch('/api/subjects', { headers: { ...authHeaders } });
           const text = await response.text();
           const json = text ? JSON.parse(text) : {};
+          
           if (json && json.success && Array.isArray(json.data)) {
-            setSubjects(json.data);
+            const filteredData = isAdmin ? json.data : json.data.filter((s: any) => s.user_id === user?.id);
+            setSubjects(filteredData);
           }
         }
       } catch (error) { 
@@ -291,7 +301,6 @@ export default function PenjanaSoalanPage() {
          setCourseCode(''); setCourseName(formatted);
       }
       
-      // KEMAS KINI: Format CO supaya memaparkan 'CO' sekiranya pangkalan data merekodkan 'C'
       const rawCOs = Array.isArray(sub.co) ? sub.co : [];
       const formattedCOs = rawCOs.map((c: any) => {
         let str = String(c).toUpperCase().trim();
@@ -483,9 +492,6 @@ export default function PenjanaSoalanPage() {
     } catch (error) { alert('Gagal menjana Word.'); }
   };
 
-  // ============================================================
-  // FUNGSI PINTAR SIMPAN KE BANK SOALAN (DENGAN ANTI-DUPLICATE FILTER)
-  // ============================================================
   const handleSaveToBank = async () => {
     if (!generatedQuestions) return;
     if (!selectedSubject) {
@@ -496,7 +502,6 @@ export default function PenjanaSoalanPage() {
     setIsSavingBank(true);
     
     try {
-      // 1. Ambil soalan sedia ada daripada pangkalan data bagi subjek ini sahaja
       const { data: existingQuestions, error: fetchError } = await supabase
         .from('questions')
         .select('question_text')
@@ -504,25 +509,22 @@ export default function PenjanaSoalanPage() {
 
       if (fetchError) throw new Error(`Gagal menyemak Bank Soalan: ${fetchError.message}`);
 
-      // Fungsi normalisasi teks untuk perbandingan tepat (menghapuskan nombor, pilihan jawapan, tag JSU & format)
       const normalizeText = (str: string) => {
         return str
-          .replace(/^(?:\d+[\.\)]|BAHAGIAN\s+[A-Z]:?|PART\s+[A-Z]:?)\s*/gi, '') // Buang nombor soalan / tajuk bahagian
-          .replace(/\\?\[\s*(?:Aras|Level|CO\d*|CLO\d*|LO\d*|PLO\d*|PO\d*|C\d+|P\d+|A\d*)[^\]]*\\?\]/gi, '') // Buang tag JSU
-          .replace(/^[A-E]\.\s+.*$/gm, '') // Buang pilihan jawapan (A. B. C. D.) untuk elak ralat jika susunan berubah
-          .replace(/\s+/g, ' ') // Tukar ruang kosong/baris baharu berganda kepada 1 ruang
+          .replace(/^(?:\d+[\.\)]|BAHAGIAN\s+[A-Z]:?|PART\s+[A-Z]:?)\s*/gi, '')
+          .replace(/\\?\[\s*(?:Aras|Level|CO\d*|CLO\d*|LO\d*|PLO\d*|PO\d*|C\d+|P\d+|A\d*)[^\]]*\\?\]/gi, '')
+          .replace(/^[A-E]\.\s+.*$/gm, '')
+          .replace(/\s+/g, ' ')
           .trim()
           .toLowerCase();
       };
 
-      // Cap jari (fingerprint) soalan: ambil 100 aksara pertama penyata/kepala soalan yang sudah dibersihkan
       const getFingerprint = (str: string) => normalizeText(str).substring(0, 100);
 
       const existingSet = new Set(
         (existingQuestions || []).map((q: any) => getFingerprint(q.question_text || ''))
       );
 
-      // 2. Pecahkan soalan baharu mengikut blok penomboran
       const questionBlocks = generatedQuestions
         .split(/(?=(?:^|\n)\s*(?:BAHAGIAN|PART|الجزء)?\s*[A-Z]?:?\s*\n*\s*\d+[\.\)]\s*)/gi)
         .map((b) => b.replace(/^(?:BAHAGIAN|PART|الجزء)\s+[A-Z]:?\s*/gi, '').trim())
@@ -530,20 +532,17 @@ export default function PenjanaSoalanPage() {
 
       const finalBlocks = questionBlocks.length > 0 ? questionBlocks : [generatedQuestions.trim()];
 
-      // 3. TAPIS SOALAN: Ambil soalan yang BELUM WUJUD sahaja
       const newUniqueBlocks = finalBlocks.filter((block) => {
         const fingerprint = getFingerprint(block);
         return fingerprint.length > 5 && !existingSet.has(fingerprint);
       });
 
-      // Jika semua soalan sudah sedia ada
       if (newUniqueBlocks.length === 0) {
         alert('ℹ️ Tiada soalan baharu disimpan. Semua soalan ini telah sedia ada dalam Bank Soalan bagi subjek ini!');
         setIsSavingBank(false);
         return;
       }
 
-      // 4. Bina payload untuk soalan-soalan baharu yang lulus tapisan
       const insertPayload = newUniqueBlocks.map((block) => {
         const bloomMatch = block.match(/\[(C[1-6]|P[1-5]|A[1-5])\]/i);
         const detectedBloom = bloomMatch ? bloomMatch[1].toUpperCase() : 'C1';
@@ -569,7 +568,6 @@ export default function PenjanaSoalanPage() {
         };
       });
 
-      // 5. Masukkan senarai soalan unik terus ke Supabase
       const { error } = await supabase.from('questions').insert(insertPayload);
 
       if (!error) {
@@ -593,7 +591,7 @@ export default function PenjanaSoalanPage() {
   };
 
   // ============================================================
-  // FUNGSI JANAAN BERURUTAN (SEQUENTIAL) - Mencegah Race Condition
+  // FUNGSI JANAAN BERURUTAN (SEQUENTIAL) & POTONG KREDIT
   // ============================================================
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -623,13 +621,36 @@ export default function PenjanaSoalanPage() {
       setProgress((prev) => (prev < 70 ? prev + 10 : prev));
     }, 2500);
 
+    // PENYELESAIAN 2: PENOLAKAN KREDIT SEBELUM PROSES
+    const cost = aiModel === 'gpt-4o' ? 2 : 1;
+    const authHeaders = await getAuthHeaders();
+
+    try {
+      const creditRes = await fetch('/api/deduct-credit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ cost })
+      });
+      const creditData = await creditRes.json();
+      
+      if (!creditRes.ok || !creditData.success) {
+        alert(`❌ GAGAL: Baki kredit harian anda tidak mencukupi untuk menggunakan enjin ini. \n\nSila pilih enjin yang lebih murah (Standard) atau hubungi Pentadbir.\nKos Diperlukan: ${cost} Kredit.`);
+        setIsGenerating(false);
+        clearInterval(intervalId);
+        return;
+      }
+    } catch (err) {
+      console.error("Ralat penolakan kredit:", err);
+      alert("Ralat menyemak baki kredit. Sila cuba lagi.");
+      setIsGenerating(false);
+      clearInterval(intervalId);
+      return;
+    }
+
     try {
       const activeParts = (['A', 'B', 'C'] as const).filter(p => sections[p].enabled && sections[p].count > 0);
-      const authHeaders = await getAuthHeaders();
-
       let fullQuestionsText = "";
 
-      // HACK: Memaksa arahan Wajaran Topik masuk secara ketat ke dalam minda AI menerusi pembolehubah 'courseName'
       const activeTopicsList = activeTopics.map(t => `"${t.name}" (${t.percentage}%)`).join(', ');
       const topicStrictPrompt = activeTopics.length > 0 
           ? `\n\n[AMARAN MUTLAK: Anda WAJIB membina soalan secara seimbang dan merangkumi keseluruhan topik berikut mengikut wajaran: ${activeTopicsList}. DILARANG HANYA FOKUS PADA SATU TOPIK SAHAJA!]`
@@ -644,7 +665,7 @@ export default function PenjanaSoalanPage() {
           body: JSON.stringify({
             mode: part,
             subjectId: selectedSubject,
-            courseName: courseName + topicStrictPrompt, // Suntikan arahan Wajaran di sini
+            courseName: courseName + topicStrictPrompt,
             courseCode,
             theme,
             sectionData: sections[part],
@@ -658,7 +679,6 @@ export default function PenjanaSoalanPage() {
           }),
         });
 
-        // Safe-parsing res.text() untuk mengelakkan ralat JSON.parse
         const text = await res.text();
         const json = text ? JSON.parse(text) : {};
 
@@ -701,7 +721,6 @@ export default function PenjanaSoalanPage() {
         setGeneratedScheme("Skema gagal dijana.");
       }
 
-      // AUTO-SIMPAN KE DALAM JADUAL 'archives'
       try {
         const archiveData = {
           course_code: courseCode || 'TIADA',
@@ -723,8 +742,12 @@ export default function PenjanaSoalanPage() {
       }
 
       setProgress(100);
-      setProgressText('Selesai!');
-      setTimeout(() => setIsGenerating(false), 500);
+      setProgressText('Selesai! Baki kredit anda telah ditolak.');
+      setTimeout(() => {
+        setIsGenerating(false);
+        // Alert tambahan supaya pengguna refresh lencana kredit mereka di penjuru kanan atas
+        window.dispatchEvent(new Event('credit-updated')); 
+      }, 500);
 
     } catch (error: any) { 
       clearInterval(intervalId);
@@ -832,7 +855,7 @@ export default function PenjanaSoalanPage() {
                  <div>
                    <label style={{...styles.label, color: '#0284c7'}}>Set Soalan (Reshuffle)</label>
                    <select value={setSoalan} onChange={(e) => setSetSoalan(e.target.value)} style={{...styles.input, borderColor: '#bae6fd', backgroundColor: '#f0f9ff'}}>
-                     {[1,2,3,4,5].map(n => <option key={n} value={n}>Set {n}</option>)}
+                     {[1,2,3].map(n => <option key={n} value={n}>Set {n}</option>)}
                    </select>
                  </div>
               </div>
@@ -841,8 +864,8 @@ export default function PenjanaSoalanPage() {
                 <div>
                   <label style={{...styles.label, color: '#2563eb'}}>Enjin AI Penjana</label>
                   <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} style={{...styles.input, borderColor: '#bfdbfe', backgroundColor: '#eff6ff'}}>
-                    <option value="gpt-4o-mini">Standard (Patuh Format)</option>
-                    <option value="gpt-4o">Premium (Kreativiti Tinggi)</option>
+                    <option value="gpt-4o-mini">Standard (Kos: 1 Kredit)</option>
+                    <option value="gpt-4o">Premium (Kos: 2 Kredit)</option>
                   </select>
                 </div>
                 <div>

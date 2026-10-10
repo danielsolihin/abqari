@@ -8,94 +8,98 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function CreditBadge() {
-  const [creditData, setCreditData] = useState({
-    dailyLimit: 15,
-    usedCredit: 0,
-    bonusCredit: 0,
-    isUnlimited: false
+  const [creditInfo, setCreditInfo] = useState({
+    available: 0,
+    limit: 5,
+    isUnlimited: false,
+    isAdmin: false
   });
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchCredit = async () => {
+    try {
+      // WAJIB GUNA getUser() UNTUK DATA TERKINI DARI SERVER (Bukan getSession)
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) return;
+
+      const meta = user.user_metadata || {};
+      const email = user.email || '';
+      
+      const isAdmin = meta.role === 'admin' || ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'].includes(email);
+      const isUnlimited = isAdmin || meta.is_unlimited === true;
+
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' });
+      let usage = meta.daily_usage || 0;
+      const lastDate = meta.last_generation_date || '';
+
+      if (lastDate !== today) {
+        usage = 0; 
+      }
+
+      const dailyLimit = meta.daily_limit !== undefined ? meta.daily_limit : 5; 
+      const bonus = meta.bonus_credit || 0;
+      
+      const available = dailyLimit + bonus - usage;
+
+      setCreditInfo({
+        available: available > 0 ? available : 0,
+        limit: dailyLimit + bonus,
+        isUnlimited,
+        isAdmin
+      });
+    } catch (error) {
+      console.error("Ralat memuatkan lencana:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchCredits = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+    fetchCredit();
 
-        const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
-        const isAdmin = adminEmails.includes(user.email || '') || user.user_metadata?.role === 'admin';
-
-        // 1. CUBA AMBIL DARI JADUAL PROFIL
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('daily_limit, used_credit, bonus_credit, is_unlimited')
-          .eq('id', user.id)
-          .maybeSingle(); // guna maybeSingle utk elak error jika rekod tiada
-
-        // Sediakan pemboleh ubah dengan fallback kepada user_metadata
-        let fetchedDaily = 15;
-        let fetchedUsed = 0;
-        let fetchedBonus = 0;
-        let fetchedUnlim = isAdmin;
-
-        if (data) {
-          fetchedDaily = data.daily_limit !== null ? Number(data.daily_limit) : 15;
-          fetchedUsed = Number(data.used_credit) || 0;
-          fetchedBonus = Number(data.bonus_credit) || 0;
-          fetchedUnlim = data.is_unlimited || isAdmin;
-        } else if (user.user_metadata) {
-          // 2. FALLBACK JIKA SISTEM ADMIN UPDATE TERUS KE METADATA AUTH
-          fetchedDaily = user.user_metadata.daily_limit !== undefined ? Number(user.user_metadata.daily_limit) : 15;
-          fetchedBonus = Number(user.user_metadata.bonus_credit) || 0;
-          fetchedUnlim = user.user_metadata.is_unlimited === true || isAdmin;
-        }
-
-        setCreditData({
-          dailyLimit: fetchedDaily,
-          usedCredit: fetchedUsed,
-          bonusCredit: fetchedBonus,
-          isUnlimited: fetchedUnlim
-        });
-
-      } catch (error) {
-        console.error('Ralat menarik data kredit:', error);
-      } finally {
-        setLoading(false);
-      }
+    // Dengar isyarat dari penjana soalan, dan panggil fetchCredit sekali lagi
+    const handleUpdate = () => {
+      setIsLoading(true);
+      setTimeout(() => fetchCredit(), 500); // Beri masa server Supabase update
     };
-
-    fetchCredits();
+    
+    window.addEventListener('credit-updated', handleUpdate);
+    return () => window.removeEventListener('credit-updated', handleUpdate);
   }, []);
 
-  if (loading) return null;
-
-  if (creditData.isUnlimited) {
+  if (isLoading) {
     return (
-      <div style={{ display: 'flex', gap: '10px' }}>
-        <span style={{ backgroundColor: '#fef3c7', color: '#b45309', padding: '6px 14px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          ⚡ Unlimited Credit
-        </span>
+      <div style={{ backgroundColor: '#f1f5f9', padding: '6px 14px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', border: '1px solid #cbd5e1' }}>
+        ⏳ Menyemak Kredit...
       </div>
     );
   }
 
-  const remainingDaily = Math.max(0, creditData.dailyLimit - creditData.usedCredit);
+  if (creditInfo.isUnlimited) {
+    return (
+      <div style={{ backgroundColor: '#fdf4ff', padding: '6px 14px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', color: '#9333ea', border: '1px solid #e9d5ff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        ⚡ Akses Tanpa Had
+      </div>
+    );
+  }
+
+  const isLow = creditInfo.available <= 2;
 
   return (
-    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-      
-      {/* TAG 1: KREDIT HARIAN */}
-      <span style={{ backgroundColor: '#f8fafc', color: '#334155', padding: '6px 14px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
-        🪙 {remainingDaily} / {creditData.dailyLimit} Harian
-      </span>
-      
-      {/* TAG 2: KREDIT BONUS (Memastikan paparan kuat sekiranya wujud) */}
-      {creditData.bonusCredit > 0 && (
-        <span style={{ backgroundColor: '#dcfce7', color: '#15803d', padding: '6px 14px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #bbf7d0' }}>
-          🎁 +{creditData.bonusCredit} Bonus
-        </span>
-      )}
-
+    <div style={{ 
+      backgroundColor: isLow ? '#fee2e2' : '#fef9c3', 
+      padding: '6px 14px', 
+      borderRadius: '20px', 
+      fontSize: '0.85rem', 
+      fontWeight: 'bold', 
+      color: isLow ? '#991b1b' : '#854d0e',
+      border: `1px solid ${isLow ? '#fca5a5' : '#fde047'}`,
+      display: 'flex', 
+      alignItems: 'center', 
+      gap: '6px',
+      transition: 'all 0.3s'
+    }}>
+      🪙 {creditInfo.available} / {creditInfo.limit} Harian
     </div>
   );
 }

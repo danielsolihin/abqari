@@ -35,6 +35,12 @@ export default function AdminDashboardPage() {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [viewUser, setViewUser] = useState<any | null>(null);
 
+  // State Modal Edit Pengguna (Kemas Kini Profil & Peranan)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editUser, setEditUser] = useState<any | null>(null);
+  const [editData, setEditData] = useState({ name: '', faculty: '', phone: '', role: 'user' });
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState<boolean>(false);
+
   useEffect(() => {
     checkAdminAccess();
   }, []);
@@ -159,8 +165,60 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handleEditUser = (userName: string) => {
-    alert(`Fungsi Edit untuk ${userName} sedang dalam pembangunan dan akan diaktifkan kelak.`);
+  // FUNGSI MEMBUKA MODAL EDIT
+  const openEditModal = (u: any) => {
+    if (SUPERADMIN_EMAILS.includes(u.email)) {
+      alert('🛡️ RALAT KESELAMATAN: Maklumat Akaun Superadmin Utama tidak boleh disunting.');
+      return;
+    }
+    setEditUser(u);
+    setEditData({
+      name: u.full_name || u.name || '',
+      faculty: u.faculty || '',
+      phone: u.phone || '',
+      role: u.role || 'user'
+    });
+    setIsEditModalOpen(true);
+  };
+
+  // FUNGSI MENYIMPAN HASIL SUNTINGAN PROFIL
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editUser) return;
+
+    setIsSubmittingEdit(true);
+    try {
+      // Kita menggunakan kaedah 'PATCH' (action: 'update_profile') ke api/admin/users
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_profile',
+          userId: editUser.id,
+          profileData: {
+            full_name: editData.name,
+            name: editData.name, // update both fields just in case
+            faculty: editData.faculty,
+            phone: editData.phone,
+            role: editData.role
+          }
+        })
+      });
+
+      const json = await res.json();
+      if (json.success || res.ok) {
+        alert(`✅ Profil ${editData.name} berjaya dikemas kini!`);
+        setIsEditModalOpen(false);
+        fetchUsers(); // Refresh the table
+      } else {
+        alert(`Ralat: ${json.error || 'Gagal mengemas kini profil.'}`);
+      }
+    } catch (err) {
+      console.error('Ralat kemas kini pengguna:', err);
+      alert('Ralat pelayan semasa menyimpan maklumat pengguna.');
+    } finally {
+      setIsSubmittingEdit(false);
+    }
   };
 
   const openCreditModal = (u: any) => {
@@ -266,7 +324,7 @@ export default function AdminDashboardPage() {
     kebalLabel: { fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '5px' },
 
     modalOverlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' },
-    modalBox: { backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '520px', padding: '25px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)' },
+    modalBox: { backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '520px', padding: '25px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)', maxHeight: '90vh', overflowY: 'auto' as const },
     input: { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outlineColor: '#3b0764', backgroundColor: '#f8fafc', boxSizing: 'border-box' as const },
     viewLabel: { display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#64748b', marginBottom: '4px' },
     viewData: { fontSize: '0.92rem', color: '#0f172a', fontWeight: '600', marginBottom: '14px', backgroundColor: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }
@@ -392,8 +450,8 @@ export default function AdminDashboardPage() {
                         <td style={styles.td}>{u.email}</td>
                         <td style={styles.td}>{u.phone}</td>
                         <td style={styles.td}>
-                          <span style={{ fontWeight: '700', color: SUPERADMIN_EMAILS.includes(u.email) ? '#9333ea' : '#2563eb' }}>
-                            {SUPERADMIN_EMAILS.includes(u.email) ? '👑 Superadmin' : 'Pensyarah'}
+                          <span style={{ fontWeight: '700', color: SUPERADMIN_EMAILS.includes(u.email) || u.role === 'admin' ? '#9333ea' : '#2563eb' }}>
+                            {SUPERADMIN_EMAILS.includes(u.email) ? '👑 Superadmin' : u.role === 'admin' ? '🛡️ Admin' : 'Pensyarah'}
                           </span>
                         </td>
                         <td style={styles.td}><span style={styles.badgeApproved}>Diluluskan</span></td>
@@ -402,7 +460,7 @@ export default function AdminDashboardPage() {
                             <span style={styles.kebalLabel}>🔒 Pentadbir Kebal</span>
                           ) : (
                             <div style={styles.actionContainer}>
-                              <button style={styles.btnEdit} onClick={() => handleEditUser(u.full_name || u.name)}>Edit</button>
+                              <button style={styles.btnEdit} onClick={() => openEditModal(u)}>Edit</button>
                               <button style={styles.btnReject} onClick={() => handleDeleteActiveUser(u)}>Hapus</button>
                             </div>
                           )}
@@ -534,7 +592,88 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      {/* MODAL 2: KEMASKINI KREDIT */}
+      {/* MODAL 2: KEMASKINI PROFIL PENGGUNA (EDIT USER) */}
+      {isEditModalOpen && editUser && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalBox}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.2rem', fontWeight: '800' }}>
+                ✏️ Edit Maklumat Pengguna
+              </h3>
+              <button onClick={() => setIsEditModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleSaveEdit}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={styles.viewLabel}>Nama Penuh / Gelaran</label>
+                <input 
+                  type="text" 
+                  style={styles.input} 
+                  value={editData.name} 
+                  onChange={(e) => setEditData({ ...editData, name: e.target.value })} 
+                  required 
+                />
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={styles.viewLabel}>Fakulti / Jabatan</label>
+                <input 
+                  type="text" 
+                  style={styles.input} 
+                  value={editData.faculty} 
+                  onChange={(e) => setEditData({ ...editData, faculty: e.target.value })} 
+                  required 
+                />
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={styles.viewLabel}>Nombor Telefon</label>
+                <input 
+                  type="text" 
+                  style={styles.input} 
+                  value={editData.phone} 
+                  onChange={(e) => setEditData({ ...editData, phone: e.target.value })} 
+                  required 
+                />
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={styles.viewLabel}>Peranan (Role)</label>
+                <select 
+                  style={styles.input} 
+                  value={editData.role} 
+                  onChange={(e) => setEditData({ ...editData, role: e.target.value })}
+                >
+                  <option value="user">Pensyarah Biasa</option>
+                  <option value="admin">🛡️ Pentadbir (Admin)</option>
+                </select>
+                <p style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '6px' }}>
+                  * Jika anda menukar kepada 'Admin', pengguna ini akan dapat melihat & mengakses butang ke halaman Modul Pentadbir.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '25px', borderTop: '1px solid #e2e8f0', paddingTop: '15px' }}>
+                <button 
+                  type="button" 
+                  onClick={() => setIsEditModalOpen(false)}
+                  style={{ backgroundColor: 'transparent', border: '1px solid #cbd5e1', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', color: '#475569' }}
+                >
+                  Batal
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSubmittingEdit}
+                  style={{ backgroundColor: '#3b82f6', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  {isSubmittingEdit ? '⏳ Menyimpan...' : '💾 Simpan Perubahan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: KEMASKINI KREDIT */}
       {isCreditModalOpen && selectedCreditUser && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalBox}>
