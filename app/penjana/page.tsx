@@ -810,7 +810,7 @@ export default function PenjanaSoalanPage() {
 
           <div style={{ textAlign: 'center' }}>
             <h1 style={{ fontSize: '3.2rem', fontWeight: '900', margin: '0 0 8px 0', letterSpacing: '-1px' }}><span style={{ color: '#fde047' }}>ABQARI</span></h1>
-            <p style={{ color: '#e2e8f0', fontSize: '0.95rem', fontWeight: '700', letterSpacing: '1px', margin: '0 0 15px 0' }}>SISTEM PENJANA MODULAR BERSEPADU (M.I.G.S)</p>
+            <p style={{ color: '#e2e8f0', fontSize: '0.95rem', fontWeight: '700', letterSpacing: '1px', margin: '0 0 15px 0' }}>ADVANCED BLUEPRINT & QUESTION ASSESSMENT RESOURCE INTEGRATOR</p>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>

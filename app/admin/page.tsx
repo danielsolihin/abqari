@@ -691,7 +691,7 @@ export default function AdminDashboardPage() {
             <form onSubmit={handleSaveCredit}>
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: '700', color: '#334155' }}>
-                  Akses Tanpa Had (Unlimited Credit)
+                  Tanpa Had (Unlimited Credit)
                 </label>
                 <select 
                   style={styles.input}

@@ -147,7 +147,7 @@ export default function LoginPage() {
               ADVANCED BLUEPRINT & QUESTION ASSESSMENT RESOURCE INTEGRATOR
             </p>
             <p style={{ fontSize: '1.05rem', lineHeight: '1.6', color: '#cbd5e1', marginBottom: '40px' }}>
-              Sistem pintar penggubalan kertas peperiksaan rasmi UiTM berteraskan kecerdasan buatan (AI) termaju.
+              Sistem pintar penggubalan kertas peperiksaan bersepadu
             </p>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -168,7 +168,7 @@ export default function LoginPage() {
             
             <div style={{ textAlign: 'center', marginBottom: '40px' }}>
               <h2 style={{ fontSize: '2rem', fontWeight: '800', color: '#0f172a', margin: '0 0 10px 0' }}>Log Masuk</h2>
-              <p style={{ color: '#64748b', margin: 0 }}>Sila masukkan kelayakan portal anda.</p>
+              <p style={{ color: '#64748b', margin: 0 }}>Sila masukkan Emel dan Katalaluan anda</p>
             </div>
 
             <div style={{ backgroundColor: 'white', padding: '35px', borderRadius: '24px', boxShadow: '0 20px 40px -10px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
@@ -274,7 +274,7 @@ export default function LoginPage() {
 
             <div style={{ textAlign: 'center', marginTop: '30px', fontSize: '0.8rem', color: '#64748b' }}>
               &copy; {new Date().getFullYear()} Hak Cipta Terpelihara. ACIS Universiti Teknologi MARA.<br/>
-              Sistem ABQARI Versi 1.0 (Prototaip)
+              Sistem ABQARI Versi 1.0
             </div>
 
           </div>
