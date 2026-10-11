@@ -205,9 +205,9 @@ export default function PenjanaSoalanPage() {
   const [topicDistribution, setTopicDistribution] = useState<{name: string, percentage: string}[]>([{ name: '', percentage: '' }]);
 
   const [sections, setSections] = useState<any>({
-    A: { enabled: true, type: 'objektif', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 }, beranakCount: 0 },
-    B: { enabled: true, type: 'true_false', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 }, beranakCount: 0 },
-    C: { enabled: true, type: 'essay', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 }, beranakCount: 0 }
+    A: { enabled: true, type: 'objektif', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 }, beranakCount: 0, mixedMode: false },
+    B: { enabled: true, type: 'true_false', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 }, beranakCount: 0, mixedMode: false },
+    C: { enabled: true, type: 'essay', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 }, beranakCount: 0, mixedMode: false }
   });
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -251,7 +251,6 @@ export default function PenjanaSoalanPage() {
     fetchUserProfile();
   }, []);
 
-  // PENYELESAIAN 1: TAPISAN SUBJEK UNTUK PENSYARAH BIASA SAHAJA
   useEffect(() => {
     const fetchSubjects = async () => {
       try {
@@ -261,8 +260,6 @@ export default function PenjanaSoalanPage() {
 
         let query = supabase.from('subjects').select('*').order('created_at', { ascending: false });
 
-        // Tapis mengikut pemilikan (jika bukan admin)
-        // NOTA: Jika DB anda menggunakan kolum nama lain (cth: 'created_by'), tukarkan 'user_id' di bawah ini
         if (!isAdmin && user) {
           query = query.eq('user_id', user.id);
         }
@@ -353,7 +350,29 @@ export default function PenjanaSoalanPage() {
     return currentSum === (sections[part].count || 0);
   });
 
-  const isGenerateDisabled = isGenerating || !isAllSectionsValid || !isTopicSectionValid;
+  // ============================================================
+  // FUNGSI KESELAMATAN MARKAH ESEI (POP-UP AMARAN)
+  // ============================================================
+  const getValidationErrors = () => {
+    let errors: string[] = [];
+    (['A', 'B', 'C'] as const).forEach(part => {
+      if (sections[part].enabled && sections[part].type === 'essay' && sections[part].count > 0) {
+        const marksPerQ = sections[part].marks / sections[part].count;
+        
+        if (marksPerQ < 1) {
+          errors.push(`BAHAGIAN ${part}: Purata ${marksPerQ.toFixed(2)} markah per soalan. Soalan esei mesti bernilai sekurang-kurangnya 1 markah per soalan.`);
+        } else if (marksPerQ % 0.5 !== 0) {
+          errors.push(`BAHAGIAN ${part}: Purata ${marksPerQ.toFixed(2)} markah per soalan tidak sah. Sila ubah bilangan markah/soalan supaya purata berakhir dengan gandaan 0.5 (Cth: 1.5, 2.0, 2.5).`);
+        }
+      }
+    });
+    return errors;
+  };
+  
+  const validationErrors = getValidationErrors();
+  const hasValidationErrors = validationErrors.length > 0;
+
+  const isGenerateDisabled = isGenerating || !isAllSectionsValid || !isTopicSectionValid || hasValidationErrors;
 
   const renderHighlightedText = (text: string) => {
     if (!text) return null;
@@ -598,6 +617,7 @@ export default function PenjanaSoalanPage() {
     if (!selectedSubject) return alert('Sila pilih subjek terlebih dahulu.');
     if (!isAllSectionsValid) return alert('Ralat: Sila pastikan jumlah nilai pecahan Aras Bloom sama dengan Jumlah Soalan.');
     if (!isTopicSectionValid && !isTopicEmpty) return alert('Ralat: Sila pastikan jumlah Wajaran Topik tepat 100%.');
+    if (hasValidationErrors) return alert('Ralat: Sila betulkan purata markah sebelum menjana soalan.');
 
     setIsGenerating(true); 
     setGeneratedQuestions(null); 
@@ -621,7 +641,6 @@ export default function PenjanaSoalanPage() {
       setProgress((prev) => (prev < 70 ? prev + 10 : prev));
     }, 2500);
 
-    // PENYELESAIAN 2: PENOLAKAN KREDIT SEBELUM PROSES
     const cost = aiModel === 'gpt-4o' ? 2 : 1;
     const authHeaders = await getAuthHeaders();
 
@@ -745,7 +764,6 @@ export default function PenjanaSoalanPage() {
       setProgressText('Selesai! Baki kredit anda telah ditolak.');
       setTimeout(() => {
         setIsGenerating(false);
-        // Alert tambahan supaya pengguna refresh lencana kredit mereka di penjuru kanan atas
         window.dispatchEvent(new Event('credit-updated')); 
       }, 500);
 
@@ -771,7 +789,7 @@ export default function PenjanaSoalanPage() {
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '45px', paddingTop: '10px' }}>
           
-          <Link
+           <Link
             href="/"
             style={{
               display: 'inline-flex',
@@ -789,7 +807,6 @@ export default function PenjanaSoalanPage() {
           >
             ← Kembali ke Papan Pemuka
           </Link>
-
 
           <div style={{ textAlign: 'center' }}>
             <h1 style={{ fontSize: '3.2rem', fontWeight: '900', margin: '0 0 8px 0', letterSpacing: '-1px' }}><span style={{ color: '#fde047' }}>ABQARI</span></h1>
@@ -917,10 +934,15 @@ export default function PenjanaSoalanPage() {
                         </div>
                         
                         {(sections[part].type === 'objektif') && (
-                           <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center' }}>
+                           <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
                               <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#475569', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                                 Bilangan Soalan Berlapis (Penyata + Roman):
                                 <input type="number" min="0" max={sections[part].count || 0} value={sections[part].beranakCount || 0} onChange={e => updateSection(part, 'beranakCount', Number(e.target.value))} style={{...styles.input, width: '70px', marginLeft: '10px', padding: '4px 8px'}} />
+                              </label>
+
+                              <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#0f766e', display: 'flex', alignItems: 'center', cursor: 'pointer', backgroundColor: '#ccfbf1', padding: '6px 12px', borderRadius: '8px', border: '1px solid #5eead4' }}>
+                                <input type="checkbox" checked={sections[part].mixedMode || false} onChange={e => updateSection(part, 'mixedMode', e.target.checked)} style={{ marginRight: '8px' }} />
+                                Aktifkan Mod Campuran (20-30% Soalan KECUALI / BENAR / SALAH)
                               </label>
                            </div>
                         )}
@@ -976,13 +998,23 @@ export default function PenjanaSoalanPage() {
                 ))}
               </div>
             </div>
+            
+            {hasValidationErrors && (
+              <div style={{ backgroundColor: '#fef2f2', border: '1px solid #f87171', borderRadius: '12px', padding: '15px', marginBottom: '20px' }}>
+                {validationErrors.map((err, idx) => (
+                  <p key={idx} style={{ color: '#dc2626', fontWeight: 'bold', margin: '0 0 5px 0', fontSize: '0.9rem' }}>
+                    <span style={{ marginRight: '8px' }}>🔴</span>{err}
+                  </p>
+                ))}
+              </div>
+            )}
 
             <button 
               onClick={handleGenerate} 
               disabled={isGenerateDisabled} 
               style={{ width: '100%', padding: '18px', backgroundColor: isGenerateDisabled ? '#94a3b8' : '#2563eb', color: 'white', border: 'none', borderRadius: '12px', fontSize: '1.1rem', fontWeight: 'bold', cursor: isGenerateDisabled ? 'not-allowed' : 'pointer', marginBottom: '30px' }}
             >
-              {isGenerating ? '⚙ Sistem Modular Sedang Memproses...' : (!isAllSectionsValid || !isTopicSectionValid) ? '⚠️ Sila Cukupkan Aras Bloom & Wajaran Topik' : '✨ Jana Kertas Soalan & Skema'}
+              {isGenerating ? '⚙ Sistem Modular Sedang Memproses...' : (!isAllSectionsValid || !isTopicSectionValid) ? '⚠️ Sila Cukupkan Aras Bloom & Wajaran Topik' : hasValidationErrors ? '⚠️ Betulkan Purata Markah' : '✨ Jana Kertas Soalan & Skema'}
             </button>
           </div>
 

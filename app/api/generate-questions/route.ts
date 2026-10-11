@@ -93,6 +93,22 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
   processedText = processedText.replace(/\bethika\b/g, "etika");
 
   if (questionType === "objektif" || questionType === "true_false") {
+    
+    // PEMBETULAN BARU: Halang soalan tergantung "merujuk kepada:"
+    processedText = processedText.replace(/^(\d+\.[\t\s]+)(.*?)\s+merujuk\s+kepada\s*:?\s*$/gmi, "$1Manakah antara berikut merujuk kepada maksud $2?");
+    processedText = processedText.replace(/^(\d+\.[\t\s]+)(.*?)\s+(adalah|ialah)\s*:?\s*$/gmi, "$1Apakah yang dimaksudkan dengan $2?");
+    
+    // Tukar titik bertindih di akhir baris utama soalan kepada tanda soal
+    processedText = processedText.replace(/:\s*\n/g, "?\n");
+
+    // PEMBETULAN KHAS: Menghalang "Yang manakah" di awal soalan
+    processedText = processedText.replace(/^(\d+\.[\t\s]*)Yang\s+manakah\b/gmi, "$1Manakah antara berikut");
+    processedText = processedText.replace(/Yang\s+manakah/gi, "Manakah antara berikut");
+    processedText = processedText.replace(/Manakah\s+antara\s+berikut\s+KECUALI\s+merupakan/gi, "Antara berikut, yang manakah merupakan");
+    
+    // PEMBETULAN KHAS: Menyelamatkan ayat penyata (Soalan Beranak) yang tergantung oleh AI
+    processedText = processedText.replace(/^(\d+\.[\t\s]+)(yang\s+dimaksudkan\s+dengan\s+[^.]+)\./gmi, "$1Pernyataan berikut menerangkan $2.");
+    
     // Baiki ralat ejaan minor
     processedText = processedText.replace(/yang manakah kembali/gi, "yang manakah");
     
@@ -147,6 +163,17 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
 
     processedText = processedText.replace(/\bdalam artikel ini\b/gi, "dalam topik ini");
     processedText = processedText.replace(/\bdalam petikan ini\b/gi, "berdasarkan topik ini");
+
+    // ============================================================
+    // POST-PROCESSING: MEMAKSA PENUKARAN PERKATAAN MALAS AI
+    // ============================================================
+    processedText = processedText.replace(/\b(mengabaikan)\b/gi, "Mengurangkan tumpuan terhadap");
+    processedText = processedText.replace(/\b(pengabaian)\b/gi, "pengetepian elemen penting");
+    processedText = processedText.replace(/\b(semata-mata)\b/gi, "secara eksklusif tanpa elemen tambahan");
+    processedText = processedText.replace(/\b(sahaja)\b/gi, "sebagai satu-satunya rujukan");
+    processedText = processedText.replace(/\b(tidak sah)\b/gi, "kaedah alternatif yang tidak konvensional");
+    processedText = processedText.replace(/\b(mengasingkan)\b/gi, "Mewujudkan pengkhususan tertutup bagi");
+    processedText = processedText.replace(/\b(menghapuskan)\b/gi, "Menyelaras semula dasar sedia ada untuk");
   }
 
   // PEMBERSIHAN TANDA BACA BERTINDIH
@@ -156,11 +183,11 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
 
   // PEMBAIKAN KHAS ENJIN PREMIUM: MEMISAHKAN PILIHAN JAWAPAN 'A.' JIKA IA TERCANTUM SEBARIS DENGAN SOALAN
   if (questionType === "objektif") {
-    processedText = processedText.replace(/(\?|\.)[\t\s]+(A[\.\)][\t\s]+)/g, "$1\n\n\t$2");
+    processedText = processedText.replace(/(\?|\.|:|\n)[\t\s]+(A[\.\)][\t\s]+)/g, "$1\n\n\t$2");
     processedText = processedText.replace(/([^\n])[\t\s]+([B-D][\.\)][\t\s]+)/g, "$1\n\t$2");
   }
 
-  // PEMBAIKAN KHAS SOALAN BERANAK: MEMISAHKAN AYAT PENYATA DAN SOALAN UTAMA PADA BARIS BAHARU (TAB 1 ENTER)
+  // PEMBAIKAN KHAS SOALAN BERANAK: MEMISAHKAN AYAT PENYATA DAN SOALAN UTAMA PADA BARIS BAHARU
   if (questionType === "objektif") {
     processedText = processedText.replace(/^(\d+\.[\t\s]+[^\n\?]+)\?\s*((?:Apakah|Bagaimanakah|Manakah|Mengapakah|Siapakah|Pilih|Pernyataan|Kombinasi|Langkah|Antara)[^\n\?]+\?)(?=\s*\n+[\t\s]*i\.)/gmi, (match, p1, p2) => {
       const cleanStmt = p1.replace(/\b(Apakah|Bagaimanakah|Manakah|Mengapakah|Siapakah)\s+/gi, '').trim();
@@ -241,7 +268,8 @@ function cleanAndTransformQuestions(text: string, language: string = "Bahasa Mel
     if (/^\d+\.\s+/.test(line)) {
       const isNounQuestion = /Apakah\s+(tujuan|maksud|definisi|elemen|faktor|fungsi|komponen|pernyataan|konsep|sifat|kesan|cabaran|peranan|kepentingan|aspek|yang\s+dimaksudkan)/i.test(line);
 
-      if (line.includes("Apakah ") && !isNounQuestion && Math.random() > 0.6) {
+      // Kurangkan rawak sekiranya ada penanda analisis supaya strukturnya selamat
+      if (line.includes("Apakah ") && !isNounQuestion && !line.includes("KECUALI") && !line.includes("SALAH") && !line.includes("BENAR") && !line.includes("BUKAN") && Math.random() > 0.6) {
         const randomPrefix = diverseQuestionPrefixes[Math.floor(Math.random() * diverseQuestionPrefixes.length)];
         lines[i] = line.replace(/Apakah\s+/gi, `${randomPrefix} `);
       }
@@ -277,7 +305,8 @@ export async function POST(req: NextRequest) {
       lo = [],
       domain = [],
       language = "Bahasa Melayu",
-      fullQuestions = ""
+      fullQuestions = "",
+      mixedMode = false // KAWALAN MOD CAMPURAN
     } = body;
 
     const apiKey = process.env.OPENAI_API_KEY;
@@ -288,7 +317,7 @@ export async function POST(req: NextRequest) {
     const langLower = (language || "").toLowerCase();
     const isArabic = langLower.includes("arab") || langLower.includes("arabic");
     const isEnglish = langLower.includes("english") || langLower.includes("inggeris");
-
+    
     if (mode === "SCHEMA") {
       let schemaPrompt = "";
       if (isArabic) {
@@ -361,6 +390,10 @@ ${fullQuestions}`;
     let finalContext = contextText || `[GENERATE QUESTIONS FOR: ${courseName}]`;
 
     const activeSec = Array.isArray(sectionData) ? sectionData[0] : (sectionData || (Array.isArray(sections) ? sections[0] : sections) || body);
+    
+    // PEMBETULAN BUG: isMixedMode dipastikan dibaca dari activeSec dengan selamat
+    const isMixedMode = mixedMode === true || String(mixedMode).toLowerCase() === "true" || sectionData?.mixedMode === true || activeSec?.mixedMode === true;
+
     const rawType = String(activeSec?.type || activeSec?.format || activeSec?.questionType || body?.type || body?.format || "objektif").toLowerCase();
 
     let questionType = sectionData?.type || activeSec?.type || "objektif";
@@ -392,8 +425,52 @@ ${fullQuestions}`;
     if (formattedCOs.length === 0) formattedCOs = ['CO1', 'CO2'];
     const coOptions = formattedCOs.join(', ');
 
+    // ============================================================
+    // PENGIRAAN MARKAH DINAMIK (BARU) KHAS UNTUK ESEI / SUBJEKTIF
+    // Menggunakan pemetaan statik ketat supaya markah SENTIASA .0 atau .5
+    // Halangan: Soalan tanpa pecahan maksimum 2.5 Markah
+    // ============================================================
     const totalSectionMarks = parseNum(sectionData?.marks) || parseNum(activeSec?.marks) || 10;
-    const subMarks = Math.max(1, Math.floor(totalSectionMarks / (count * 2)));
+    const marksPerQ = count > 0 ? totalSectionMarks / count : 1;
+    
+    let subCount = 1;
+    let exactSubMarks = marksPerQ;
+
+    if (marksPerQ === 1) { subCount = 1; exactSubMarks = 1; }
+    else if (marksPerQ === 1.5) { subCount = 1; exactSubMarks = 1.5; }
+    else if (marksPerQ === 2) { subCount = 1; exactSubMarks = 2; }
+    else if (marksPerQ === 2.5) { subCount = 1; exactSubMarks = 2.5; }
+    else if (marksPerQ === 3) { subCount = 2; exactSubMarks = 1.5; }
+    else if (marksPerQ === 3.5) { subCount = 1; exactSubMarks = 3.5; } 
+    else if (marksPerQ === 4) { subCount = 2; exactSubMarks = 2; }
+    else if (marksPerQ === 4.5) { subCount = 3; exactSubMarks = 1.5; }
+    else if (marksPerQ === 5) { subCount = 2; exactSubMarks = 2.5; }
+    else if (marksPerQ === 5.5) { subCount = 1; exactSubMarks = 5.5; } 
+    else if (marksPerQ === 6) { subCount = 3; exactSubMarks = 2; }
+    else if (marksPerQ === 7) { subCount = 2; exactSubMarks = 3.5; }
+    else if (marksPerQ === 7.5) { subCount = 3; exactSubMarks = 2.5; }
+    else if (marksPerQ === 8) { subCount = 4; exactSubMarks = 2; }
+    else if (marksPerQ === 9) { subCount = 3; exactSubMarks = 3; }
+    else if (marksPerQ === 10) { subCount = 4; exactSubMarks = 2.5; }
+    else if (marksPerQ === 11) { subCount = 2; exactSubMarks = 5.5; }
+    else if (marksPerQ === 12) { subCount = 4; exactSubMarks = 3; }
+    else if (marksPerQ === 13) { subCount = 2; exactSubMarks = 6.5; }
+    else if (marksPerQ === 14) { subCount = 4; exactSubMarks = 3.5; }
+    else if (marksPerQ === 15) { subCount = 3; exactSubMarks = 5; }
+    else if (marksPerQ === 16) { subCount = 4; exactSubMarks = 4; }
+    else if (marksPerQ === 17) { subCount = 2; exactSubMarks = 8.5; }
+    else if (marksPerQ === 18) { subCount = 4; exactSubMarks = 4.5; }
+    else if (marksPerQ === 19) { subCount = 2; exactSubMarks = 9.5; }
+    else if (marksPerQ === 20) { subCount = 4; exactSubMarks = 5; }
+    else {
+        // Fallback keselamatan 
+        subCount = 1;
+        exactSubMarks = marksPerQ;
+    }
+
+    const subMarksDisplay = exactSubMarks % 1 === 0 ? exactSubMarks.toString() : exactSubMarks.toFixed(1);
+    const subLabelsArr = Array.from({length: subCount}, (_, i) => String.fromCharCode(97 + i) + '.');
+    const subLabelsStr = subLabelsArr.join(', ');
 
     const activeBloomLevels = Object.entries(bloomSpec)
       .filter(([_, cnt]) => Number(cnt) > 0)
@@ -401,7 +478,11 @@ ${fullQuestions}`;
 
     let bloomVerbsInstruction = "";
     if (activeBloomLevels.length > 0 && questionType === "essay") {
-      bloomVerbsInstruction = "\nARAHAN KATA TUGAS / KATA PERINTAH BLOOM (WAJIB GUNAKAN PADA ANAK SOALAN 'a.' & 'b.' SAHAJA):\n";
+      if (subCount > 1) {
+         bloomVerbsInstruction = "\nARAHAN KATA TUGAS / KATA PERINTAH BLOOM (WAJIB GUNAKAN PADA ANAK SOALAN SAHAJA):\n";
+      } else {
+         bloomVerbsInstruction = "\nARAHAN KATA TUGAS / KATA PERINTAH BLOOM:\n";
+      }
       activeBloomLevels.forEach(level => {
         if (BLOOM_VERBS_MAP[level]) {
           bloomVerbsInstruction += `- Aras ${level}: [${BLOOM_VERBS_MAP[level].join(", ")}]\n`;
@@ -428,9 +509,18 @@ ${fullQuestions}`;
 
         if (questionType === "objektif") {
           if (currentQNum <= biasaCount) {
-             qFormatMs = "FORMAT WAJIB: SOALAN BIASA TUNGGAL (A, B, C, D sahaja. DILARANG GUNA ITEM ROMAN i, ii, iii, iv). ";
-             qFormatEn = "MANDATORY FORMAT: REGULAR SINGLE QUESTION (A, B, C, D only. NO ROMAN NUMERALS i, ii, iii, iv). ";
-             qFormatAr = "تنسيق إلزامي: سؤال عادي فردي (A, B, C, D فقط. بدون أرقام رومانية). ";
+             const applyMixed = isMixedMode && (biasaCount > 0) && (currentQNum % 3 === 0 || (biasaCount < 3 && currentQNum === biasaCount));
+
+             if (applyMixed) {
+                 qFormatMs = "FORMAT WAJIB: SOALAN ANALISIS (WAJIB letak perkataan KECUALI, BUKAN, SALAH, atau BENAR di penghujung ayat soalan (Cth: 'Berikut adalah ciri X, KECUALI:'). DILARANG memulakan soalan dengan perkataan 'Yang'. A, B, C, D sahaja. DILARANG GUNA ITEM ROMAN). ";
+                 qFormatEn = "MANDATORY FORMAT: ANALYSIS QUESTION (MUST place EXCEPT, NOT, FALSE, or TRUE at the end of the statement. DO NOT start the question with 'Which'. A, B, C, D only. NO ROMAN NUMERALS). ";
+                 qFormatAr = "تنسيق إلزامي: سؤال تحليلي (يجب وضع كلمات مثل باستثناء، خاطئ، أو صحيح في نهاية الجملة. A, B, C, D فقط). ";
+             } else {
+                 qFormatMs = "FORMAT WAJIB: SOALAN BIASA TUNGGAL (A, B, C, D sahaja. DILARANG GUNA ITEM ROMAN i, ii, iii, iv). ";
+                 qFormatEn = "MANDATORY FORMAT: REGULAR SINGLE QUESTION (A, B, C, D only. NO ROMAN NUMERALS i, ii, iii, iv). ";
+                 qFormatAr = "تنسيق إلزامي: سؤال عادي فردي (A, B, C, D فقط. بدون أرقام رومانية). ";
+             }
+
           } else {
              qFormatMs = "FORMAT WAJIB: SOALAN BERANAK / BERLAPIS (WAJIB MENGGUNAKAN ITEM ROMAN i, ii, iii, iv sebelum pilihan A, B, C, D). ";
              qFormatEn = "MANDATORY FORMAT: BRANCHED QUESTION (YOU MUST USE ROMAN NUMERALS i, ii, iii, iv before the A, B, C, D options). ";
@@ -477,9 +567,9 @@ ${bloomMappingAr}
 
 تحذير صارم لهيكل الأسئلة الموضوعية:
 1. يجب توفير خيارات الإجابة: يجب أن يحتوي كل سؤال موضوعي على 4 خيارات للإجابة (A، B، C، D). لا تقم أبداً بإنشاء سؤال بدون خيارات إجابة!
-
-2. لا تضع سؤالين في رقم واحد. استخدم علامة استفهام واحدة (?) لكل سؤال.
-3. لأسئلة C1 و C2، يُمنع منعاً باتاً استخدام عبارة تقريرية في البداية. ابدأ مباشرة بسؤال مباشر.
+2. يُمنع صيغة "املأ الفراغ": يجب أن تنتهي الأسئلة بعلامة استفهام (؟). يُمنع إنهاء السؤال بنقطتين (:) أو نقاط حذف (...).
+3. يمنع تكرار الأسئلة: يجب أن يكون كل سؤال في هذا الاختبار فريداً تماماً ولا يختبر نفس المعلومة مرتين.
+4. يمنع الأسئلة الغامضة أو المعلقة: يجب أن يكون السؤال دقيقاً، يُمنع طرح أسئلة مثل "ما هو الجانب الأهم؟" دون تحديد الموضوع بوضوح.
 
 تعليمات الأسئلة العادية:
 - قاعدة المحاذاة: يجب وضع Tab (\\t) واحد مباشرة بعد رقم السؤال، و Tab (\\t) واحد قبل جميع الخيارات.
@@ -526,23 +616,38 @@ ${bloomMappingAr}
 \t[صواب] [خطأ]
 \t[C1] [CO1]`;
       } else {
-        formatInstructions = `صيغة الأسئلة المقالية (${count} أسئلة). 
+        if (subCount > 1) {
+           formatInstructions = `صيغة الأسئلة المقالية (${count} أسئلة). 
 - تحذير حرج: توقف عن التوليد فوراً بعد السؤال رقم ${count}.
+- توزيع الدرجات (إلزامي): كل سؤال رئيسي يساوي ${marksPerQ} درجات. يجب تقسيم كل سؤال رئيسي إلى ${subCount} أسئلة فرعية (${subLabelsStr}) بقيمة ${subMarksDisplay} درجات لكل سؤال فرعي.
 
 ${bloomMappingAr}
 ${bloomVerbsInstruction}
 
 قواعد المقال:
 1. يجب أن يبدأ السؤال الرئيسي (رقم 1 ، 2 ...) ببيان / جملة تقريرية كاملة. يُمنع منعاً باتاً بدء السؤال الرئيسي بكلمة أمر أو سؤال!
-
-2. تُستخدم أفعال بلوم فقط في الأسئلة الفرعية ('a.' و 'b.').
+2. تُستخدم أفعال بلوم فقط في الأسئلة الفرعية (${subLabelsStr}).
 
 مثال:
 1.\tتلعب أصول الفقه دوراً محورياً في ضبط عملية الاجتهاد واستنباط الأحكام الشرعية. (هذه جملة تقريرية)
 
-\ta. ناقش أهمية القواعد الأصولية في فهم النصوص الشرعية. (${subMarks} درجات)
-\tb. بين كيف يتم التعامل مع التعارض الظاهري بين الأدلة. (${subMarks} درجات)
+${subLabelsArr.map(lbl => `\t${lbl} ناقش / بين ... (${subMarksDisplay} درجات)`).join('\n')}
 \t[C4] [CO2]`;
+        } else {
+           formatInstructions = `صيغة الأسئلة المقالية (${count} أسئلة). 
+- تحذير حرج: توقف عن التوليد فوراً بعد السؤال رقم ${count}.
+- توزيع الدرجات (إلزامي): كل سؤال رئيسي يساوي ${marksPerQ} درجات بدون أي تقسيم فرعي.
+
+${bloomMappingAr}
+${bloomVerbsInstruction}
+
+قواعد المقال:
+1. هذا سؤال مباشر لا يحتوي على تقسيمات فرعية (a, b). اكتب السؤال مباشرة مع ذكر الدرجة (${subMarksDisplay} درجات).
+
+مثال:
+1.\tناقش أهمية القواعد الأصولية في فهم النصوص الشرعية. (${subMarksDisplay} درجات)
+\t[C4] [CO2]`;
+        }
       }
     } else if (isEnglish) {
       if (questionType === "objektif") {
@@ -573,11 +678,12 @@ ${bloomMappingEn}
 
 STRICT OBJECTIVE STRUCTURE WARNING (MUST READ):
 1. MUST HAVE OPTIONS: Every objective question MUST have exactly 4 answer options (A, B, C, and D). NEVER generate a question without answer options!
-
-2. NO DOUBLE QUESTIONS: DO NOT ask two separate questions (two question marks '?') in the same item.
-3. C1 & C2 QUESTIONS: DO NOT use declarative statements for C1 and C2. You MUST start directly with the question (e.g., "What is...", "How does...").
-4. C3 TO C6 QUESTIONS: You are allowed to use a short statement before the question.
-5. PARAGRAPH SPACING (CRITICAL): For Regular Questions, write the question stem ending with '?'. THEN LEAVE ONE BLANK LINE (ENTER) and indent Option A with 1 TAB (\\t). NEVER place Option A on the same line as the question!
+2. NO FILL-IN-THE-BLANK: Questions MUST end with a question mark (?). DO NOT end questions with a colon (:) or ellipsis (...). Example of FORBIDDEN: 'Education refers to:'. Example of CORRECT: 'What is the definition of education?'.
+3. NO REPEATED QUESTIONS: Every question MUST be strictly unique. Do not repeat facts, concepts, or wording in the same set.
+4. NO VAGUE QUESTIONS: Avoid generic hanging questions like 'What is the most important aspect?'. Be highly specific in the question statement.
+5. NO DOUBLE QUESTIONS: DO NOT ask two separate questions (two question marks '?') in the same item.
+6. C1 & C2 QUESTIONS: DO NOT use declarative statements for C1 and C2. You MUST start directly with the question (e.g., "What is...", "How does...").
+7. PARAGRAPH SPACING (CRITICAL): For Regular Questions, write the question stem ending with '?'. THEN LEAVE ONE BLANK LINE (ENTER) and indent Option A with 1 TAB (\\t). NEVER place Option A on the same line as the question!
 
 REGULAR OBJECTIVE INSTRUCTIONS:
 - Line 1: Question Number + Question Stem (ending with ?).
@@ -627,23 +733,37 @@ EXAMPLE:
 \t[TRUE] [FALSE]
 \t[C1] [CO1]`;
       } else {
-        formatInstructions = `Format Essay (${count} questions).
+        if (subCount > 1) {
+           formatInstructions = `Format Essay (${count} questions).
 - CRITICAL WARNING: STOP GENERATING IMMEDIATELY AFTER QUESTION ${count}.
 
 ${bloomMappingEn} 
 ${bloomVerbsInstruction}
 
 RULES FOR ESSAY:
-1. The main stem (number 1, 2...) MUST ONLY be a DECLARATIVE FACTUAL STATEMENT ending with a full stop (.). DO NOT start the main stem with a question or command word, and NEVER end it with a question mark (?)!
-
-2. Bloom's command verbs MUST ONLY be used in the sub-questions ('a.' and 'b.').
+1. MARKS DISTRIBUTION (MANDATORY): Each main question is worth ${marksPerQ} marks. You MUST split each main question into exactly ${subCount} sub-questions (${subLabelsStr}) worth ${subMarksDisplay} Marks each.
+2. The main stem (number 1, 2...) MUST ONLY be a DECLARATIVE FACTUAL STATEMENT ending with a full stop (.). DO NOT start the main stem with a question or command word, and NEVER end it with a question mark (?)!
+3. Bloom's command verbs MUST ONLY be used in the sub-questions (${subLabelsStr}).
 
 EXAMPLE:
 1.\tIntegration serves as a foundational concept in advanced calculus. (THIS IS A FACTUAL STATEMENT)
 
-\ta. Explain the process of evaluating a definite integral. (${subMarks} Marks)
-\tb. Derive the rate of change for the differential equation. (${subMarks} Marks)
+${subLabelsArr.map(lbl => `\t${lbl} Explain / Derive ... (${subMarksDisplay} Marks)`).join('\n')}
 \t[C4] [CO2]`;
+        } else {
+           formatInstructions = `Format Essay (${count} questions).
+- CRITICAL WARNING: STOP GENERATING IMMEDIATELY AFTER QUESTION ${count}.
+
+${bloomMappingEn} 
+${bloomVerbsInstruction}
+
+RULES FOR ESSAY:
+1. MARKS DISTRIBUTION (MANDATORY): This is a direct single question format without sub-divisions (no a, b). Do not split the question. State the full mark (${subMarksDisplay} Marks) directly at the end.
+
+EXAMPLE:
+1.\tExplain the process of evaluating a definite integral. (${subMarksDisplay} Marks)
+\t[C4] [CO2]`;
+        }
       }
     } else {
       if (questionType === "objektif") {
@@ -675,18 +795,20 @@ ${bloomMappingMs}
 AMARAN KERAS STRUKTUR & TATABAHASA SOALAN OBJEKTIF (WAJIB BACA):
 1. WAJIB ADA PILIHAN JAWAPAN (A, B, C, D): Setiap soalan yang dijana WAJIB mempunyai tepat 4 pilihan jawapan.
 2. DILARANG SAMA SEKALI DUA SOALAN TERGABUNG: DILARANG mengulang kata tanya dua kali (cth: 'Bagaimanakah langkah... Bagaimanakah antara berikut...'). Hanya SATU soalan utama dibenarkan per nombor soalan!
-
-3. GAYA SOALAN C1 & C2: DILARANG menggunakan sebarang ayat penyata (stimulus) di awal soalan bagi aras C1 dan C2. WAJIB terus gunakan soalan langsung (Direct Question).
-4. GAYA SOALAN C3 HINGGA C6: DIBENARKAN memulakan soalan dengan SATU ayat penyata ringkas, diikuti dengan persoalan. (Guna dengan kadar terkawal).
-5. "Siapakah" HANYA KHUSUS untuk orang atau tokoh. DILARANG menggunakan "Siapakah" untuk benda atau konsep.
-6. DILARANG menggunakan soalan tergantung seperti "dalam artikel ini" atau "dalam petikan ini".
-7. HARAM MENGGUNAKAN IMBUHAN "-lah": DILARANG SAMA SEKALI menggunakan perkataan berimbuhan seperti "Analisislah", "Jelaskanlah". Soalan objektif mestilah bertanyakan soalan secara terus.
+3. HARAM MENGGUNAKAN FORMAT "ISI TEMPAT KOSONG": Soalan WAJIB berakhir dengan tanda soal (?). DILARANG KERAS menamatkan soalan dengan titik bertindih (:) atau titik-titik elipsis (...). Contoh SALAH: "Dekolonisasi merujuk kepada:". Contoh BETUL: "Apakah yang dimaksudkan dengan dekolonisasi dalam pendidikan?".
+4. SOALAN MESTI SPESIFIK & LENGKAP: DILARANG menggunakan soalan umum atau tergantung seperti "Apakah aspek yang paling penting?". Terus nyatakan subjek dalam ayat tanya secara spesifik.
+5. DILARANG SOALAN BERULANG (ANTI-REPETITION): Setiap soalan dalam set ini WAJIB unik dan menyentuh konsep berbeza. DILARANG KERAS MENGULANG konsep, fakta, atau tajuk yang sama bagi mengelakkan pertindihan soalan. Jika Soalan 1 sudah bertanya tentang Topik A, Soalan 2 WAJIB cari Topik B dari nota.
+6. GAYA SOALAN C1 & C2: DILARANG menggunakan sebarang ayat penyata (stimulus) di awal soalan bagi aras C1 dan C2. WAJIB terus gunakan soalan langsung (Direct Question).
+7. GAYA SOALAN C3 HINGGA C6: DIBENARKAN memulakan soalan dengan SATU ayat penyata ringkas, diikuti dengan persoalan. (Guna dengan kadar terkawal).
+8. "Siapakah" HANYA KHUSUS untuk orang atau tokoh. DILARANG menggunakan "Siapakah" untuk benda atau konsep.
+9. DILARANG menggunakan soalan tergantung seperti "dalam artikel ini" atau "dalam petikan ini".
+10. HARAM MENGGUNAKAN IMBUHAN "-lah": DILARANG SAMA SEKALI menggunakan perkataan berimbuhan seperti "Analisislah", "Jelaskanlah". Soalan objektif mestilah bertanyakan soalan secara terus.
 
 ARAHAN SOALAN BIASA (LANGSUNG / TUNGGAL):
 - SOALAN MESTI BERCANTUM: Ayat penyata dan ayat pertanyaan mesti berada dalam satu perenggan yang sama terus di sebelah nombor soalan.
 - HARAM PENGGUNAAN JAWAPAN D YANG MUDAH DITEKA: DILARANG KERAS menggunakan pilihan "Semua di atas", "Tiada satu pun di atas", atau "A dan B betul" pada pilihan jawapan D bagi soalan tunggal! Pilihan D WAJIB mengandungi teks fakta distraktor yang sah.
 - SUSUNAN BARIS WAJIB:
-  Baris 1: Nombor Soalan + Ayat Penyata & Ayat Soalan (diakhiri dengan ?).
+  Baris 1: Nombor Soalan + Ayat Penyata & Ayat Soalan (diakhiri dengan TANDA SOAL ? SAHAJA. HARAM guna titik bertindih :).
   <ENTER JARAK / SELANG SEBARIS>
   Baris 2: \tA. Pilihan A
   Baris 3: \tB. Pilihan B
@@ -700,14 +822,14 @@ CONTOH LENGKAP C3-C6 (Penyata & Soalan Bercantum):
 1.\tFalsafah Pendidikan Kebangsaan menekankan aspek keseimbangan. Bagaimanakah aspek ini diterapkan dalam kurikulum sekolah?
 
 \tA. Melalui pengasingan subjek sains dan sastera
-\tB. Dengan memperkenalkan subjek pendidikan rohani
+\tB. Melalui penawaran subjek pendidikan rohani
 \tC. Melalui penglibatan pelajar dalam aktiviti kokurikulum secara holistik
 \tD. Mengurangkan waktu pembelajaran teori khusus
 \t[C3] [CO2]
 
 ARAHAN SOALAN BERANAK (BERLAPIS - WAJIB PATUH SUSUNAN KETAT):
-- Baris 1: Nombor Soalan + Ayat Penyata Fakta / Senario Lengkap diakhiri dengan TITIK (.) SAHAJA. DILARANG KERAS meletakkan kata tanya ('Apakah'/'Bagaimanakah') atau tanda soal (?) di Baris 1 ini!
-- <ENTER JARAK / SELANG SEBARIS> + DITAIP 1 TAB (\\t) + SATU AYAT SOALAN UTAMA (cth: "\\tApakah antara berikut yang paling tepat...", "\\tApakah langkah yang perlu diambil...").
+- Baris 1: Nombor Soalan + Ayat Penyata Fakta / Senario Lengkap diakhiri dengan TITIK (.) SAHAJA. DILARANG KERAS meletakkan kata tanya ('Apakah'/'Bagaimanakah') أو tanda soal (?) di Baris 1 ini!
+- <ENTER JARAK / SELANG SEBARIS> + DITAIP 1 TAB (\\t) + SATU AYAT SOALAN UTAMA LENGKAP BERSERTA TANDA SOAL (cth: "\\tApakah antara berikut yang paling tepat...", "\\tApakah langkah yang perlu diambil...?"). HARAM menamatkan ayat utama dengan titik bertindih (:).
 - <ENTER JARAK / SELANG SEBARIS> + DITAIP 1 TAB (\\t) + ITEM ROMAN (\\ti. ..., \\tii. ..., \\tiii. ..., \\tiv. ...).
 - Pilihan Jawapan A, B, C, D (\\tA. ..., \\tB. ..., \\tC. ..., \\tD. ...). (Bagi soalan beranak, pilihan gabungan "D. Semua di atas" adalah DIBENARKAN).
 - Tag JSU (\\t[C...] [CO...]).
@@ -740,35 +862,127 @@ CONTOH WAJIB:
 \t[BENAR] [SALAH]
 \t[C1] [CO1]`;
       } else {
-        formatInstructions = `Format Esei (${count} soalan). 
+        if (subCount > 1) {
+           formatInstructions = `Format Esei (${count} soalan). 
 - AMARAN KERAS: ANDA WAJIB BERHENTI MENJANA SEBAIK SAHAJA SOALAN KE-${count} SELESAI.
 
 ${bloomMappingMs}
 ${bloomVerbsInstruction}
 
 PERATURAN FORMAT ESEI & TATABAHASA (AMARAN KERAS MUTLAK):
-1. KEPALA SOALAN (sebelah nombor 1, 2, 3...) WAJIB merupakan AYAT PENYATA LENGKAP (Fakta/Stimulus) yang DITAMATKAN DENGAN TITIK (.). DILARANG SAMA SEKALI memulakan kepala soalan dengan kata perintah, dan DILARANG mengakhirinya dengan tanda soal (?)!
-
-2. KATA PERINTAH BLOOM HANYA BOLEH DIGUNAKAN PADA ANAK SOALAN ('a.' dan 'b.') SAHAJA. (Pastikan ia adalah ayat perintah murni bebas imbuhan Me, Meng, Men - Contoh yang betul: "Bincangkan", "Huraikan", "Nilaikan", "Rekaciptakan").
+1. PENGIRAAN MARKAH (WAJIB PATUH): Setiap soalan utama bernilai ${marksPerQ} markah. Anda WAJIB memecahkan setiap soalan utama kepada TEPAT ${subCount} anak soalan (${subLabelsStr}) dengan nilai ${subMarksDisplay} Markah setiap satu!
+2. KEPALA SOALAN (sebelah nombor 1, 2, 3...) WAJIB merupakan AYAT PENYATA LENGKAP (Fakta/Stimulus) yang DITAMATKAN DENGAN TITIK (.). DILARANG SAMA SEKALI memulakan kepala soalan dengan kata perintah, dan DILARANG mengakhirinya با tanda soal (?)!
+3. KATA PERINTAH BLOOM HANYA BOLEH DIGUNAKAN PADA ANAK SOALAN (${subLabelsStr}) SAHAJA. (Pastikan ia adalah ayat perintah murni bebas imbuhan Me, Meng, Men - Contoh yang betul: "Bincangkan", "Huraikan", "Nilaikan", "Rekaciptakan").
 
 CONTOH STRUKTUR ESEI WAJIB PATUH:
 1.\tPendidikan memainkan peranan signifikan dalam pembangunan negara dan pembentukan jati diri bangsa. (INI ADALAH AYAT PENYATA LENGKAP)
 
-\ta. Bincangkan peranan pendidikan dalam memupuk patriotisme. (${subMarks} Markah)
-\tb. Huraikan langkah proaktif oleh pihak sekolah. (${subMarks} Markah)
+${subLabelsArr.map(lbl => `\t${lbl} Bincangkan / Huraikan ... (${subMarksDisplay} Markah)`).join('\n')}
 \t[C4] [CO2]`;
+        } else {
+           formatInstructions = `Format Esei (${count} soalan). 
+- AMARAN KERAS: ANDA WAJIB BERHENTI MENJANA SEBAIK SAHAJA SOALAN KE-${count} SELESAI.
+
+${bloomMappingMs}
+${bloomVerbsInstruction}
+
+PERATURAN FORMAT ESEI & TATABAHASA (AMARAN KERAS MUTLAK):
+1. PENGIRAAN MARKAH (WAJIB PATUH): Ini adalah format soalan langsung berstruktur tanpa pecahan anak soalan (tiada a, b). Anda DILARANG memecahkan soalan ini. Nyatakan terus markah penuh (${subMarksDisplay} Markah) pada hujung soalan.
+
+CONTOH STRUKTUR ESEI WAJIB PATUH:
+1.\tBincangkan peranan pendidikan dalam memupuk patriotisme kebangsaan. (${subMarksDisplay} Markah)
+\t[C4] [CO2]`;
+        }
       }
     }
 
-    // SUNTIKAN ELEMEN SITUASI & TIGA PERATURAN EMAS DISTRAKTOR
-    const SUNTIKAN_SITUASI = `
-ARAHAN ELEMEN SITUASI / SENARIO & KUALITI DISTRAKTOR (WAJIB PATUH 100%):
-1. ELEMEN SITUASI / SENARIO: Anda WAJIB menggubal sekurang-kurangnya 50% daripada jumlah soalan dalam BENTUK SITUASI REKAAN REALISTIK, SENARIO WATAK (seperti "Ahmad menghadapi situasi...", "Syarikat ABC dalam senario..."), ATAU KAJIAN KES APLIKASI PRAKTIKAL.
-2. TIGA (3) PERATURAN EMAS DISTRAKTOR (PILIHAN JAWAPAN SALAH):
-   - ATURAN KONSEP RAKAN (PEER CONCEPTS): Distraktor WAJIB datang dari kategori domain/topik akademik yang sama dengan jawapan betul. Jika jawapan betul adalah istilah Arab, distraktor lain WAJIB istilah Arab dari silibus. Jika teori, distraktor mesti nama teori lain. HARAM mencampuradukkan bidang/kategori secara rawak.
-   - SINTAKSIS SELARI (PARALLEL SYNTAX): Keempat-empat pilihan (A, B, C, D) WAJIB bermula dengan struktur tatabahasa yang sama dan mempunyai ukuran kepanjangan ayat yang setara. (Contoh: Jika A bermula dengan kata kerja "Membangunkan", maka B, C, dan D JUGA WAJIB bermula dengan kata kerja berimbuhan "Me-").
-   - LARAS BAHASA AKADEMIK TINGGI: HARAM menggunakan frasa penolak murahan yang mudah diteka seperti "tidak", "bukan", "mengabaikan", "semata-mata", "sahaja", "tanpa", atau "semua di atas" untuk soalan tunggal. Distraktor mestilah dimanipulasi dari silibus (cross-concept) supaya berbunyi positif, logik, dan sangat munasabah (plausible) bagi mengelirukan pelajar.
-3. EJAAN: Pastikan ejaan perkataan etika ditaip dengan betul ("etika", BUKAN "ethika").`;
+    let mixedModeInstAr = "";
+    let mixedModeInstEn = "";
+    let mixedModeInstMs = "";
+
+    if (isMixedMode) {
+      mixedModeInstAr = `1. الوضع المختلط (هام جداً):
+   - سيتم تحديد بعض الأسئلة على أنها أسئلة استثناء أو تأكيد (في الخريطة أدناه).
+   - تنسيق الجملة: يُمنع بدء السؤال بكلمات استفهام غير مناسبة. استخدم بنية مثل "العبارات التالية صحيحة باستثناء:".
+   
+2. القائمة السوداء للمشتتات (تحذير مطلق!):
+   - يُمنع منعاً باتاً استخدام كلمات النفي أو الاستبعاد بأي شكل من أشكالها (مثل: "تجاهل"، "إهمال"، "فقط"، "دون"، "عدو"، "إلغاء"، "عزل") في أي خيار خاطئ. يجب أن تكون الخيارات الخاطئة مصاغة بلغة أكاديمية إيجابية ولكنها غير صحيحة علمياً.
+   - [مثال سيء - ممنوع]: "تجاهل احتياجات الفرد" / "التعليم التقني فقط".
+   - [مثال جيد - إلزامي]: "تحديد قيود عمرية وقدرات بدنية معينة" / "التركيز على الإنجازات الفنية الفردية".
+
+3. الجملة التقريرية للأسئلة المركبة:
+   - يجب أن يكون السطر الأول للأسئلة المركبة جملة تقريرية كاملة (لا تقل عن 6 كلمات) تنتهي بنقطة (.). يُمنع استخدام الجمل المعلقة.`;
+      
+      mixedModeInstEn = `1. MIXED DISTRIBUTION RULE:
+   - You will be instructed to generate specific questions as Analytical Verification/Exception questions in the mapping below.
+   - SENTENCE FORMAT: DO NOT start negative questions with poorly phrased interrogatives. Use proper phrasing like "All of the following are elements of X, EXCEPT:".
+   
+2. DISTRACTOR BLACKLIST & QUALITY (ABSOLUTE WARNING!):
+   - YOU ARE STRICTLY FORBIDDEN from using cheap exclusion words or their root forms (e.g., "ignore", "ignoring", "only", "solely", "without", "eliminate", "isolate", "isolation", "enemy") in ANY wrong option. Wrong options MUST sound highly academic, positive, and plausible.
+   - [BAD EXAMPLE - FORBIDDEN]: "Ignoring individual needs" / "Technical education solely" / "Isolating subjects".
+   - [GOOD EXAMPLE - MANDATORY]: "Setting specific age and physical capacity limits" / "Standardizing a single assessment method for all levels" / "Focusing on individual technical achievements".
+
+3. BRANCHED QUESTION STEMS:
+   - The first line of a branched question MUST be a COMPLETE declarative sentence (at least 6 words) ending with a full stop (.). DO NOT use hanging sentences (e.g., "which is meant by X.").`;
+      
+      mixedModeInstMs = `1. MOD CAMPURAN (ANALISIS PENGESAHAN & PENGECUALIAN):
+   - Anda akan diarahkan untuk membina soalan berbentuk Analisis Pengecualian / Pengesahan secara spesifik pada pemetaan soalan di bawah.
+   - FORMAT AYAT: DILARANG SAMA SEKALI memulakan soalan dengan perkataan "Yang". Gunakan struktur seperti "Berikut adalah elemen penting X, KECUALI:" أو "Pernyataan manakah yang BENAR mengenai X?".
+
+2. TIGA (3) PERATURAN EMAS DISTRAKTOR (SANGAT PENTING):
+   - ATURAN KONSEP RAKAN (PEER CONCEPTS): Distraktor WAJIB dari kategori domain/topik yang sama.
+   - SINTAKSIS SELARI (PARALLEL SYNTAX): Keempat-empat pilihan (A, B, C, D) WAJIB bermula dengan struktur tatabahasa yang sama dan ukuran kepanjangan yang setara.
+
+3. SENARAI HITAM KATA AKAR PENOLAK (AMARAN KERAS MUTLAK!):
+   - Anda HARAM menggunakan sebarang bentuk kata akar 'abai' (mengabaikan, pengabaian, terabai), 'asing' (mengasingkan, pengasingan), 'hanya', 'sahaja', 'semata-mata', 'hapus' (menghapuskan, penghapusan), 'tidak sah', 'tanpa', atau 'musuh' dalam MANA-MANA pilihan jawapan salah!
+   - DISTRAKTOR WAJIB PLAUSIBLE & POSITIF: Pilihan jawapan salah MESTI berbunyi akademik, profesional, menggunakan kata kerja positif (seperti menyediakan, memfokuskan, menyelaras, menetapkan) tetapi KONSEP/FAKTANYA SALAH.
+   - [CONTOH DISTRAKTOR BURUK / HARAM DIGUNAKAN]: "Mengabaikan keperluan individu" / "Pendidikan teknikal semata-mata" / "Pengasingan subjek akademik".
+   - [CONTOH DISTRAKTOR BERKUALITI / WAJIB DITIRU]: "Menetapkan had umur dan keupayaan fizikal yang khusus" / "Menyeragamkan kaedah pentaksiran tunggal bagi semua tahap" / "Memfokuskan penawaran program elit khas".
+
+4. AYAT PENYATA SOALAN BERANAK:
+   - Baris pertama soalan beranak WAJIB satu ayat penyata/fakta LENGKAP sekurang-kurangnya 6 perkataan dan berakhir dengan noktah (.). DILARANG meletakkan ayat tergantung (Contoh salah: "yang dimaksudkan dengan X.").`;
+    } else {
+      mixedModeInstAr = `1. عناصر السيناريو القياسية:
+   - يجب صياغة 50% على الأقل من الأسئلة كسيناريوهات واقعية أو دراسات حالة عملية.
+   - يُمنع منعاً باتاً إنشاء أسئلة استثناء أو تأكيد.
+   
+2. القائمة السوداء للمشتتات (تحذير مطلق!):
+   - يُمنع منعاً باتاً استخدام كلمات النفي أو الاستبعاد بأي شكل من أشكالها (مثل: "تجاهل"، "إهمال"، "فقط"، "دون"، "عدو"، "إلغاء"، "عزل") في أي خيار خاطئ. يجب أن تكون الخيارات الخاطئة مصاغة بلغة أكاديمية إيجابية ولكنها غير صحيحة علمياً.
+   - [مثال سيء - ممنوع]: "تجاهل قواعد اللعبة" / "الترفيه فقط" / "عزل المواد".
+   - [مثال جيد - إلزامي]: "التركيز على تكثيف التدريب البدني للفوز" / "توحيد طرق التقييم لجميع المستويات".
+
+3. الجملة التقريرية للأسئلة المركبة:
+   - يجب أن يكون السطر الأول للأسئلة المركبة جملة تقريرية كاملة (لا تقل عن 6 كلمات) تنتهي بنقطة (.). يُمنع استخدام الجمل المعلقة.`;
+      
+      mixedModeInstEn = `1. STANDARD SCENARIO RULE:
+   - You MUST generate at least 50% of the questions as REALISTIC SCENARIOS, CHARACTER-BASED SITUATIONS.
+   - YOU ARE STRICTLY FORBIDDEN from generating Exception/Negative questions (e.g., "EXCEPT", "NOT", "FALSE") or Verification questions (e.g., "TRUE").
+   
+2. DISTRACTOR BLACKLIST & QUALITY (ABSOLUTE WARNING!):
+   - YOU ARE STRICTLY FORBIDDEN from using cheap exclusion words or their root forms (e.g., "ignore", "ignoring", "only", "solely", "without", "eliminate", "isolate", "isolation", "enemy") in ANY wrong option. Wrong options MUST sound highly academic, positive, and plausible.
+   - [BAD EXAMPLE - FORBIDDEN]: "Ignoring game rules" / "Entertainment solely" / "Isolating subjects".
+   - [GOOD EXAMPLE - MANDATORY]: "Maximizing physical training intensity for victory" / "Standardizing a single assessment method for all levels".
+
+3. BRANCHED QUESTION STEMS:
+   - The first line of a branched question MUST be a COMPLETE declarative sentence (at least 6 words) ending with a full stop (.). DO NOT use hanging sentences (e.g., "which is meant by X.").`;
+      
+      mixedModeInstMs = `1. BENTUK SOALAN (STANDARD & SITUASI):
+   - Anda WAJIB menggubal sekurang-kurangnya 50% daripada jumlah soalan dalam BENTUK SITUASI REKAAN REALISTIK, SENARIO WATAK (seperti "Ahmad menghadapi situasi...").
+   - DILARANG KERAS menggunakan soalan berbentuk Analisis Pengecualian (seperti "KECUALI", "BUKAN", "SALAH") atau Analisis Pengesahan (seperti "BENAR").
+
+2. TIGA (3) PERATURAN EMAS DISTRAKTOR (SANGAT PENTING):
+   - ATURAN KONSEP RAKAN (PEER CONCEPTS): Distraktor WAJIB dari kategori domain/topik yang sama.
+   - SINTAKSIS SELARI (PARALLEL SYNTAX): Keempat-empat pilihan (A, B, C, D) WAJIB bermula dengan struktur tatabahasa yang sama dan ukuran kepanjangan yang setara.
+
+3. SENARAI HITAM KATA AKAR PENOLAK (AMARAN KERAS MUTLAK!):
+   - Anda HARAM menggunakan sebarang bentuk kata akar 'abai' (mengabaikan, pengabaian, terabai), 'asing' (mengasingkan, pengasingan), 'hanya', 'sahaja', 'semata-mata', 'hapus' (menghapuskan, penghapusan), 'tidak sah', 'tanpa', أو 'musuh' dalam MANA-MANA pilihan jawapan salah!
+   - DISTRAKTOR WAJIB PLAUSIBLE & POSITIF: Pilihan jawapan salah MESTI berbunyi akademik, profesional, menggunakan kata kerja positif (seperti menyediakan, memfokuskan, menyelaras, menetapkan) tetapi KONSEP/FAKTANYA SALAH.
+   - [CONTOH DISTRAKTOR BURUK / HARAM DIGUNAKAN]: "Mengabaikan peraturan permainan" / "Hiburan semata-mata" / "Pengasingan subjek".
+   - [CONTOH DISTRAKTOR BERKUALITI / WAJIB DITIRU]: "Memaksimumkan intensiti latihan fizikal untuk kemenangan" / "Menyeragamkan kaedah pentaksiran tunggal bagi semua tahap".
+
+4. AYAT PENYATA SOALAN BERANAK:
+   - Baris pertama soalan beranak WAJIB satu ayat penyata/fakta LENGKAP sekurang-kurangnya 6 perkataan dan berakhir dengan noktah (.). DILARANG meletakkan ayat tergantung (Contoh salah: "yang dimaksudkan dengan X.").`;
+    }
 
     let systemPrompt = "";
     if (isArabic) {
@@ -780,12 +994,9 @@ ARAHAN ELEMEN SITUASI / SENARIO & KUALITI DISTRAKTOR (WAJIB PATUH 100%):
 
 2. يُمنع منعاً باتاً اختراع أو إدخال أي مواضيع عامة خارج نطاق النص المرفق.
 
-عناصر السيناريو وجودة المشتتات (إلزامي 100%):
-1. عناصر السيناريو: يجب صياغة 50% على الأقل من الأسئلة كسيناريوهات واقعية أو دراسات حالة عملية (مثل "يواجه أحمد موقفاً...").
-2. القواعد الذهبية الثلاث للمشتتات (الخيارات الخاطئة):
-   - قاعدة المفاهيم النظيرة: يجب أن تنتمي المشتتات إلى نفس الفئة تماماً مثل الإجابة الصحيحة. إذا كانت الإجابة مصطلحاً، يجب أن تكون الخيارات الأخرى مصطلحات مشابهة من المنهج.
-   - البنية النحوية المتوازية: يجب أن تبدأ جميع الخيارات (A, B, C, D) بنفس البنية النحوية وأن تكون متقاربة في الطول. (مثال: إذا بدأ الخيار A بفعل مضارع، يجب أن تبدأ الخيارات الأخرى بفعل مضارع).
-   - لغة أكاديمية عالية: يُمنع منعاً باتاً استخدام كلمات نفي بسيطة وسهلة التخمين مثل "لا"، "فقط"، "تجاهل". يجب أن تكون المشتتات منطقية وإيجابية ومربكة للطالب غير الدارس.
+عناصر التنويع وجودة المشتتات (إلزامي 100%):
+${mixedModeInstAr}
+
 3. الإملاء: تأكد من كتابة الكلمات بشكل صحيح.
 
 ${RUBRIK_AKADEMIK}
@@ -800,6 +1011,7 @@ ${formatInstructions}
 3. يمنع منعا باتا كتابة تعليقات أو تبريرات أو شرح لخياراتك داخل ورقة الأسئلة. فقط اكتب الأسئلة والخيارات والوسم النهائي.
 4. للأسئلة الموضوعية: يجب عليك توفير 4 خيارات (A, B, C, D) لكل سؤال. لا تترك أي سؤال بدون خيارات.
 5. توزيع المواضيع: يجب تنويع الأسئلة لتشمل جميع المواضيع في النص المعطى بشكل متوازن. لا تركز فقط على موضوع واحد إذا كانت هناك مواضيع أخرى.
+6. تحذير أخير: يُمنع منعاً باتاً استخدام كلمات مثل "تجاهل"، "فقط"، "دون" في الخيارات (A, B, C, D).
 
 سياق الملاحظات:
 ${finalContext}`;
@@ -812,13 +1024,10 @@ STRICT CONTEXT GROUNDING RULE:
 
 2. DO NOT hallucinate or introduce outside general knowledge facts!
 
-SITUATIONAL ELEMENTS & STRICT DISTRACTOR QUALITY (100% MANDATORY):
-1. SITUATIONAL ELEMENTS: You MUST generate at least 50% of the questions as REALISTIC SCENARIOS, CHARACTER-BASED SITUATIONS (e.g., "Ahmad faces a situation..."), OR PRACTICAL CASE STUDIES.
-2. THE 3 GOLDEN RULES OF DISTRACTORS (WRONG OPTIONS):
-   - PEER CONCEPTS RULE: Distractors MUST belong to the exact same domain category as the correct answer. If the correct answer is a specific Arabic term or theory, all distractors MUST be Arabic terms or theories from the syllabus. DO NOT mix random categories.
-   - PARALLEL SYNTAX: All 4 options (A, B, C, D) MUST start with the exact same grammatical structure and have similar lengths. (e.g., If A starts with a Gerund/Verb like "Developing", then B, C, and D MUST also start with similar Gerunds/Verbs).
-   - HIGH ACADEMIC REGISTER: YOU ARE STRICTLY FORBIDDEN from using cheap, obvious negative words like "not", "ignore", "only", "solely", "without". Distractors must use cross-concept manipulation to sound highly academic, positive, logical, and extremely plausible.
-3. SPELLING: Ensure the word "etika" is spelled correctly (NOT "ethika") if used in Malay context.
+MIXED MODE DISTRIBUTION & STRICT DISTRACTOR QUALITY (100% MANDATORY):
+${mixedModeInstEn}
+
+3. SPELLING: Ensure proper academic spelling throughout.
 
 ${RUBRIK_AKADEMIK}
 
@@ -832,6 +1041,7 @@ ABSOLUTE RULES:
 3. STRICT PROHIBITION: DO NOT write any comments, rationale, justifications, or Bloom's explanations inside the question paper. ONLY output the questions, options, and the final tag.
 4. FOR OBJECTIVE QUESTIONS: You MUST provide 4 options (A, B, C, D) for every single question. NEVER leave a question without options.
 5. TOPIC DISTRIBUTION: You MUST vary the questions to cover ALL topics provided in the context evenly. DO NOT focus repeatedly on a single topic if other topics are present.
+6. FINAL WARNING: DO NOT use the words "ignore", "solely", or "only" in ANY of the options A, B, C, D.
 
 COURSE NOTES CONTEXT:
 ${finalContext}`;
@@ -843,7 +1053,10 @@ ARAHAN PENGIKATAN DOKUMEN / NOTA (STRICT CONTEXT GROUNDING MUTLAK):
 
 2. DILARANG SAMA SEKALI mereka-reka atau membawa masuk fakta am di luar kandungan dokumen!
 
-${SUNTIKAN_SITUASI}
+ARAHAN VARIASI SOALAN & KUALITI DISTRAKTOR (WAJIB PATUH 100%):
+${mixedModeInstMs}
+
+5. EJAAN: Pastikan ejaan perkataan etika ditaip dengan betul ("etika", BUKAN "ethika").
 
 ${RUBRIK_AKADEMIK}
 
@@ -857,6 +1070,7 @@ PERATURAN MUTLAK KERTAS SOALAN:
 3. AMARAN KERAS: DILARANG SAMA SEKALI menulis ulasan, rasional, justifikasi rubrik atau sebarang nota penerangan di dalam kertas soalan! Anda hanya dibenarkan mencetak TEKS SOALAN, PILIHAN JAWAPAN, dan TAG JSU SAHAJA.
 4. BUKAN SOALAN SUBJEKTIF: Ini adalah soalan Objektif. Anda WAJIB menjana tepat 4 pilihan jawapan (A, B, C, D) bagi SETIAP soalan sebelum meletakkan tag JSU.
 5. PENGAGIHAN TOPIK: Anda WAJIB memvariasikan soalan merangkumi KESELURUHAN topik/konteks yang diberikan secara seimbang. JANGAN tertumpu pada satu topik berulang kali (contohnya Falsafah Pendidikan Kebangsaan) jika ada topik lain di dalam nota.
+6. AMARAN TERAKHIR: DILARANG SAMA SEKALI meletakkan perkataan MENGABAIKAN, SEMATA-MATA, atau SAHAJA dalam senarai pilihan jawapan A, B, C, D.
 
 NOTA KURSUS:
 ${finalContext}`;
