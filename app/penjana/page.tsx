@@ -978,7 +978,7 @@ export default function PenjanaSoalanPage() {
 
           <div style={{ textAlign: 'center' }}>
             <h1 style={{ fontSize: '3.2rem', fontWeight: '800', margin: '0 0 8px 0', letterSpacing: '-1px' }}><span style={{ color: '#fde047' }}>ABQARI</span></h1>
-            <p style={{ color: '#e2e8f0', fontSize: '0.95rem', fontWeight: '600', letterSpacing: '1px', margin: '0 0 15px 0' }}>SISTEM PENJANA MODULAR BERSEPADU (M.I.G.S)</p>
+            <p style={{ color: '#e2e8f0', fontSize: '0.7rem', fontWeight: '600', letterSpacing: '1px', margin: '0 0 15px 0' }}>ADVANCED BLUEPRINT & QUESTION ASSESSMENT RESOURCE INTEGRATOR</p>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -1125,7 +1125,7 @@ export default function PenjanaSoalanPage() {
                                   onChange={e => updateSection(part, 'singleMode', e.target.checked)} 
                                   style={{ marginRight: '10px', width: '16px', height: '16px' }} 
                                 />
-                                🎯 Aktifkan Mod Soalan Tunggal (Markah Penuh Per Soalan - Tanpa Anak Soalan a, b, c)
+                                🎯 Aktifkan Mod Soalan Tunggal (Markah Penuh Per Soalan - Tanpa Sub Soalan a, b, c)
                               </label>
                               {sections[part].singleMode && sections[part].count > 0 && sections[part].marks > 0 && (
                                 <span style={{ fontSize: '0.75rem', color: '#059669', fontStyle: 'italic', marginLeft: '4px' }}>
