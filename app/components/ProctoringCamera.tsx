@@ -52,7 +52,7 @@ export default function ProctoringCamera() {
         fontWeight: 'bold',
         display: 'flex',
         alignItems: 'center',
-        justify: 'space-between'
+        justifyContent: 'space-between'
       }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span style={{
@@ -82,7 +82,7 @@ export default function ProctoringCamera() {
             position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
             backgroundColor: 'rgba(239, 68, 68, 0.9)', color: 'white',
             display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justify: 'center', padding: '10px', textAlign: 'center', fontSize: '0.75rem'
+            justifyContent: 'center', padding: '10px', textAlign: 'center', fontSize: '0.75rem'
           }}>
             <span>⚠️ Kamera Ralat</span>
             <span style={{ fontSize: '0.65rem', marginTop: '4px' }}>Sila benarkan akses kamera webkam.</span>

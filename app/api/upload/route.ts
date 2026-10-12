@@ -7,16 +7,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // Tingkatkan kepada 120 saat untuk pemprosesan memori vektor yang besar
 
-// PENTING: Arahkan Next.js supaya tidak memotong (reset) sambungan bagi fail bersaiz besar.
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '50mb', // Benarkan saiz fail sehingga 50MB
-    },
-    responseLimit: '50mb',
-  },
-};
-
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseKey);
