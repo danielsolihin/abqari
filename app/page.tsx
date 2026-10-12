@@ -105,7 +105,6 @@ export default function DashboardUtama() {
         let docQ = supabase.from('documents').select('*', { count: 'exact', head: true });
         let arcQ = supabase.from('archives').select('*', { count: 'exact', head: true });
 
-        // PEMBETULAN: Gunakan user_name untuk archives, BUKAN user_id
         if (!isAdminUser) {
           subQ = subQ.eq('user_id', user.id);
           docQ = docQ.eq('user_id', user.id);
@@ -389,6 +388,15 @@ export default function DashboardUtama() {
       showForLecturer: true
     },
     {
+      id: 'pengurusan-ujian', title: 'Pengurusan Ujian Online',
+      desc: 'Urus, pantau, edit tetapan dan cetak laporan markah peperiksaan dalam talian bagi kelas anda.',
+      icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>,
+      link: '/pengurusan-ujian', 
+      bgColor: '#e0e7ff',
+      showForLecturer: true, // Dipaparkan kepada pensyarah biasa
+      hideForAdmin: true     // Sembunyikan untuk Admin
+    },
+    {
       id: 'chat', title: 'Pembantu AI (RAG)',
       desc: 'Berinteraksi dan bersoal jawab dengan nota PDF anda secara langsung melalui sembang pintar.',
       icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ec4899" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><path d="M13 8H7"></path><path d="M17 12H7"></path></svg>,
@@ -402,16 +410,38 @@ export default function DashboardUtama() {
       link: '/arkib', bgColor: '#f5f3ff',
       showForLecturer: false 
     },
+    
+    // --- MODUL KE-7: TETAPAN (DIKEMBALIKAN SEMULA) ---
     {
       id: 'tetapan', title: 'Tetapan & Konfigurasi',
       desc: 'Urus profil pensyarah, kemas kini templat MS Word rasmi, dan kawalan tetapan enjin AI.',
       icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>,
-      link: '/admin', bgColor: '#fef2f2',
+      link: '/admin', // tetapan pentadbir penting tidak boleh diubah
+      bgColor: '#fef2f2',
+      showForLecturer: false 
+    },
+
+    // --- MODUL KE-8: PAPAN PEMUKA PENTADBIR (BAHARU) ---
+    {
+      id: 'admin', title: 'Papan Pemuka Pentadbir',
+      desc: 'Pusat kawalan berpusat untuk mengurus pengguna, semester, dan memantau ujian peperiksaan dalam talian.',
+      icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#be185d" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12l5.25 5 2.625-3 3.375 3 2.625-3 5.25 5v5h-19v-5z"></path><path d="M12 2v10"></path></svg>,
+      link: '/tetapan', 
+      bgColor: '#fdf2f8',
       showForLecturer: false 
     }
   ];
 
-  const activeMenu = menuItems.filter(item => isAdmin || item.showForLecturer);
+  // Penapisan pintar: 
+  // Jika pengguna adalah Admin, sembunyikan modul yang ada `hideForAdmin: true`
+  // Jika pengguna biasa, papar modul yang `showForLecturer: true`
+  const activeMenu = menuItems.filter(item => {
+    if (isAdmin) {
+      return item.hideForAdmin !== true; 
+    } else {
+      return item.showForLecturer === true;
+    }
+  });
 
   if (!isSessionVerified) {
     return (
@@ -655,17 +685,19 @@ export default function DashboardUtama() {
                     style={{
                       ...styles.card,
                       backgroundColor: hoveredCard === item.id ? '#ffffff' : 'rgba(226, 232, 240, 0.65)',
-                      border: hoveredCard === item.id ? '1px solid #cbd5e1' : '1px solid rgba(203, 213, 225, 0.6)',
+                      border: hoveredCard === item.id 
+                        ? (item.id === 'admin' ? '1px solid #be185d' : '1px solid #cbd5e1') 
+                        : (item.id === 'admin' ? '1px solid rgba(190, 24, 93, 0.4)' : '1px solid rgba(203, 213, 225, 0.6)'),
                       transform: hoveredCard === item.id ? 'translateY(-4px)' : 'translateY(0)',
                       boxShadow: hoveredCard === item.id ? '0 12px 20px -5px rgba(0,0,0,0.08), 0 8px 8px -5px rgba(0,0,0,0.03)' : '0 2px 4px rgba(0,0,0,0.02)',
                     }}
                   >
                     <div style={{ width: '42px', height: '42px', borderRadius: '8px', backgroundColor: item.bgColor, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2px' }}>{item.icon}</div>
                     <div>
-                      <h3 style={{ margin: '0 0 4px 0', color: '#0f172a', fontSize: '0.95rem', fontWeight: '700' }}>{item.title}</h3>
+                      <h3 style={{ margin: '0 0 4px 0', color: item.id === 'admin' ? '#be185d' : '#0f172a', fontSize: '0.95rem', fontWeight: '700' }}>{item.title}</h3>
                       <p style={styles.descriptionText}>{item.desc}</p>
                     </div>
-                    <div style={{ marginTop: 'auto', paddingTop: '10px', display: 'flex', alignItems: 'center', color: hoveredCard === item.id ? '#3b0764' : '#64748b', fontWeight: 'bold', fontSize: '0.8rem', transition: 'color 0.2s' }}>
+                    <div style={{ marginTop: 'auto', paddingTop: '10px', display: 'flex', alignItems: 'center', color: hoveredCard === item.id ? (item.id === 'admin' ? '#be185d' : '#3b0764') : '#64748b', fontWeight: 'bold', fontSize: '0.8rem', transition: 'color 0.2s' }}>
                       Akses Modul <span style={{ marginLeft: '4px', transform: hoveredCard === item.id ? 'translateX(3px)' : 'translateX(0)', transition: 'transform 0.2s' }}>→</span>
                     </div>
                   </div>

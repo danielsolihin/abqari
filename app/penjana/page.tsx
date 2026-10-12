@@ -5,6 +5,7 @@ import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { saveAs } from 'file-saver';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 
 // IMPORT KOMPONEN LENCANA KREDIT
@@ -181,10 +182,13 @@ const islamicQuotes = [
 ];
 
 export default function PenjanaSoalanPage() {
+  const router = useRouter();
+  
   const [subjects, setSubjects] = useState<any[]>([]);
   const [selectedSubject, setSelectedSubject] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  const [userProfile, setUserProfile] = useState<{name: string; faculty: string;}>({
+  const [userProfile, setUserProfile] = useState<{id?: string; name: string; faculty: string;}>({
     name: 'Pengguna ABQARI', faculty: 'Akademi Pengajian Islam Kontemporari (ACIS)',
   });
 
@@ -226,6 +230,31 @@ export default function PenjanaSoalanPage() {
   const [progressText, setProgressText] = useState('Sedia untuk menjana...');
   const [quoteText, setQuoteText] = useState('Meningkatkan ketepatan format menggunakan seni bina modular...');
 
+  // STATE UNTUK MODAL UJIAN ONLINE
+  const [showOnlineTestModal, setShowOnlineTestModal] = useState(false);
+  const [isPublishingTest, setIsPublishingTest] = useState(false);
+  const [publishedTestLink, setPublishedTestLink] = useState(''); 
+  const [isCopiedLink, setIsCopiedLink] = useState(false);
+
+  const [testSettings, setTestSettings] = useState({
+    programFaculty: 'Akademi Pengajian Islam Kontemporari (ACIS)',
+    courseCode: '',
+    testName: 'Ujian Akhir Semester',
+    semester: 'Semester 1',
+    description: 'Ujian penilaian kefahaman dan penulisan kursus.',
+    instructions: 'Sila jawab semua soalan. Dilarang merujuk sebarang bahan luar semasa ujian dijalankan.',
+    totalQuestions: 20,
+    maxAttempts: 1,
+    groupName: '',
+    startTime: '',
+    endTime: '',
+    durationMinutes: 60,
+    pagination: 'all',
+    reshuffle: true,
+    strictProctoring: true,
+    requireWebcam: false,
+  });
+
   const getAuthHeaders = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -242,9 +271,23 @@ export default function PenjanaSoalanPage() {
         const localUser = typeof window !== 'undefined' ? localStorage.getItem('abqari_user') : null;
         if (session?.user) {
           const meta = session.user.user_metadata || {};
-          setUserProfile({ name: meta.full_name || meta.name || session.user.email?.split('@')[0] || 'Pengguna ABQARI', faculty: meta.faculty || 'Akademi Pengajian Islam Kontemporari (ACIS)', });
+          const facultyName = meta.faculty || 'Akademi Pengajian Islam Kontemporari (ACIS)';
+          setUserProfile({ id: session.user.id, name: meta.full_name || meta.name || session.user.email?.split('@')[0] || 'Pengguna ABQARI', faculty: facultyName });
+          setTestSettings(prev => ({ ...prev, programFaculty: facultyName }));
+          
+          const adminCheck = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'].includes(session.user.email || '') || meta.role === 'admin';
+          setIsAdmin(adminCheck);
+
         } else if (localUser) {
-          try { const parsed = JSON.parse(localUser); setUserProfile({ name: parsed.name || 'Pengguna ABQARI', faculty: parsed.faculty || 'Akademi Pengajian Islam Kontemporari (ACIS)', }); } catch (e) {}
+          try { 
+            const parsed = JSON.parse(localUser); 
+            const facultyName = parsed.faculty || 'Akademi Pengajian Islam Kontemporari (ACIS)';
+            setUserProfile({ id: parsed.id, name: parsed.name || 'Pengguna ABQARI', faculty: facultyName }); 
+            setTestSettings(prev => ({ ...prev, programFaculty: facultyName }));
+
+            const adminCheck = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'].includes(parsed.email || '') || parsed.role === 'admin';
+            setIsAdmin(adminCheck);
+          } catch (e) {}
         }
       } catch (err) { console.error('Ralat:', err); }
     };
@@ -256,11 +299,11 @@ export default function PenjanaSoalanPage() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const user = session?.user;
-        const isAdmin = user ? (['admin@uitm.edu.my', 'syahiran@uitm.edu.my'].includes(user.email || '') || user.user_metadata?.role === 'admin') : false;
+        const isAdminCheck = user ? (['admin@uitm.edu.my', 'syahiran@uitm.edu.my'].includes(user.email || '') || user.user_metadata?.role === 'admin') : false;
 
         let query = supabase.from('subjects').select('*').order('created_at', { ascending: false });
 
-        if (!isAdmin && user) {
+        if (!isAdminCheck && user) {
           query = query.eq('user_id', user.id);
         }
 
@@ -275,7 +318,7 @@ export default function PenjanaSoalanPage() {
           const json = text ? JSON.parse(text) : {};
           
           if (json && json.success && Array.isArray(json.data)) {
-            const filteredData = isAdmin ? json.data : json.data.filter((s: any) => s.user_id === user?.id);
+            const filteredData = isAdminCheck ? json.data : json.data.filter((s: any) => s.user_id === user?.id);
             setSubjects(filteredData);
           }
         }
@@ -350,9 +393,6 @@ export default function PenjanaSoalanPage() {
     return currentSum === (sections[part].count || 0);
   });
 
-  // ============================================================
-  // FUNGSI KESELAMATAN MARKAH ESEI (POP-UP AMARAN)
-  // ============================================================
   const getValidationErrors = () => {
     let errors: string[] = [];
     (['A', 'B', 'C'] as const).forEach(part => {
@@ -610,8 +650,116 @@ export default function PenjanaSoalanPage() {
   };
 
   // ============================================================
-  // FUNGSI JANAAN BERURUTAN (SEQUENTIAL) & POTONG KREDIT
+  // FUNGSI JANA ONLINE TEST (DENGAN RECOVERY MEKANISME PELINDUNG GANDA)
   // ============================================================
+  const handleCreateOnlineTest = async () => {
+    // LANGKAH 2: JIKA SUDAH DITERBITKAN (PAUTAN WUJUD), KLIK KE-2 AKAN BAWA KE DASHBOARD
+    if (publishedTestLink) {
+      router.push('/');
+      return;
+    }
+
+    // LANGKAH 1: KLIK KALI PERTAMA (SIMPAN UJIAN DAN JANA PAUTAN PELAJAR)
+    if (!testSettings.groupName || !testSettings.testName) {
+      alert("Sila lengkapkan butiran Nama Ujian dan Sasaran Kumpulan Pelajar.");
+      return;
+    }
+    
+    setIsPublishingTest(true);
+
+    try {
+      let totalMarks = 0;
+      (['A', 'B', 'C'] as const).forEach(part => {
+        if (sections[part].enabled) {
+          totalMarks += Number(sections[part].marks || 0);
+        }
+      });
+
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const finalStartTime = testSettings.startTime ? new Date(testSettings.startTime).toISOString() : now.toISOString();
+      const finalEndTime = testSettings.endTime ? new Date(testSettings.endTime).toISOString() : tomorrow.toISOString();
+
+      // PAYLOAD TERAS (PASTI SELAMAT)
+      // *KEMASKINI: display_style DITETAPKAN SECARA LANGSUNG DI DALAM SETTINGS JSON*
+      const corePayload: any = {
+        user_id: userProfile.id || null,
+        faculty: testSettings.programFaculty || userProfile.faculty || 'Fakulti Umum',
+        course_code: testSettings.courseCode || courseCode || 'UMUM',
+        course_name: courseName || 'Ujian Umum',
+        group_name: testSettings.groupName,
+        test_name: testSettings.testName,
+        lecturer_name: userProfile.name || 'Pensyarah',
+        start_time: finalStartTime,
+        end_time: finalEndTime,
+        duration_minutes: Number(testSettings.durationMinutes) || 60,
+        full_marks: totalMarks,
+        questions_data: { rawText: generatedQuestions },
+        scheme_data: { rawText: generatedScheme },
+        settings: {
+          pagination: testSettings.pagination, // Memegang nilai 'all', 'section', atau 'single'
+          display_style: testSettings.pagination, // Simpan pendua untuk pastikan dibaca
+          reshuffle: testSettings.reshuffle,
+          strictProctoring: testSettings.strictProctoring,
+          requireWebcam: testSettings.requireWebcam,
+          description: testSettings.description,
+          instructions: testSettings.instructions,
+          semester: testSettings.semester,
+          totalQuestions: testSettings.totalQuestions,
+          maxAttempts: testSettings.maxAttempts
+        }
+      };
+
+      // CUBA INSERT MENGGUNAKAN PAYLOAD PENUH (JIKA DB WUJUD LAJUR KHAS)
+      const fullPayload = {
+        ...corePayload,
+        description: testSettings.description,
+        instructions: testSettings.instructions,
+        semester: testSettings.semester,
+        total_questions: Number(testSettings.totalQuestions) || 0,
+        max_attempts: Number(testSettings.maxAttempts) || 1,
+        display_style: testSettings.pagination // Hantar juga ke lajur root jika wujud
+      };
+
+      let savedData: any = null;
+      let { data, error } = await supabase.from('online_tests').insert([fullPayload]).select().single();
+
+      // FALLBACK JIKA SUPABASE PULANGKAN ERROR UNTUK LAJUR TAMBAHAN
+      if (error) {
+        console.warn("Mencuba semula dengan corePayload...", error);
+        const retryRes = await supabase.from('online_tests').insert([corePayload]).select().single();
+        if (retryRes.error) {
+          throw retryRes.error;
+        }
+        savedData = retryRes.data;
+      } else {
+        savedData = data;
+      }
+
+      // JANA PAUTAN UNTUK PELAJAR (/intro DIIKUTI BROWSER)
+      if (savedData && savedData.id) {
+        const testUrl = `${window.location.origin}/ujian/${savedData.id}/intro`;
+        setPublishedTestLink(testUrl);
+        alert(`✅ Ujian Dalam Talian Berjaya Dicipta!\n\nPautan ujian telah sedia untuk dikongsi kepada pelajar.`);
+      }
+
+    } catch (error: any) {
+      console.error("Ralat mencipta ujian:", error);
+      alert(`Gagal mencipta ujian. Ralat: ${error.message || 'Gagal menyimpan ke pangkalan data'}`);
+    } finally {
+      setIsPublishingTest(false);
+    }
+  };
+
+  const handleCopyTestLink = () => {
+    if (!publishedTestLink) return;
+    navigator.clipboard.writeText(publishedTestLink);
+    setIsCopiedLink(true);
+    setTimeout(() => setIsCopiedLink(false), 2500);
+  };
+
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSubject) return alert('Sila pilih subjek terlebih dahulu.');
@@ -777,9 +925,9 @@ export default function PenjanaSoalanPage() {
 
   const styles = {
     card: { backgroundColor: 'white', padding: '25px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '25px', position: 'relative' as 'relative', zIndex: 1 },
-    sectionTitle: { marginTop: 0, color: '#0f172a', fontSize: '1.15rem', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px', marginBottom: '20px', fontWeight: 'bold' as 'bold' },
-    label: { fontSize: '0.85rem', fontWeight: '600', color: '#475569', marginBottom: '6px', display: 'block' },
-    input: { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', backgroundColor: '#f8fafc', transition: 'all 0.2s', outlineColor: '#3b82f6' },
+    sectionTitle: { marginTop: 0, color: '#0f172a', fontSize: '1.1rem', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px', marginBottom: '20px', fontWeight: '600' as 'bold' },
+    label: { fontSize: '0.8rem', fontWeight: '500', color: '#475569', marginBottom: '6px', display: 'block' },
+    input: { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem', backgroundColor: '#f8fafc', transition: 'all 0.2s', outlineColor: '#3b82f6', fontWeight: '400' },
   };
 
   return (
@@ -809,14 +957,14 @@ export default function PenjanaSoalanPage() {
           </Link>
 
           <div style={{ textAlign: 'center' }}>
-            <h1 style={{ fontSize: '3.2rem', fontWeight: '900', margin: '0 0 8px 0', letterSpacing: '-1px' }}><span style={{ color: '#fde047' }}>ABQARI</span></h1>
-            <p style={{ color: '#e2e8f0', fontSize: '0.95rem', fontWeight: '700', letterSpacing: '1px', margin: '0 0 15px 0' }}>ADVANCED BLUEPRINT & QUESTION ASSESSMENT RESOURCE INTEGRATOR</p>
+            <h1 style={{ fontSize: '3.2rem', fontWeight: '800', margin: '0 0 8px 0', letterSpacing: '-1px' }}><span style={{ color: '#fde047' }}>ABQARI</span></h1>
+            <p style={{ color: '#e2e8f0', fontSize: '0.95rem', fontWeight: '600', letterSpacing: '1px', margin: '0 0 15px 0' }}>SISTEM PENJANA MODULAR BERSEPADU (M.I.G.S)</p>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             <CreditBadge/>
             <div style={{ color: 'white', textAlign: 'right', fontSize: '0.85rem' }}>
-              <strong style={{ fontSize: '0.95rem', display: 'block' }}>{userProfile.name}</strong>
+              <strong style={{ fontSize: '0.95rem', display: 'block', fontWeight: '600' }}>{userProfile.name}</strong>
               <span style={{ color: '#cbd5e1' }}>{userProfile.faculty}</span>
             </div>
           </div>
@@ -836,24 +984,24 @@ export default function PenjanaSoalanPage() {
 
               {selectedSubject && (
                 <div style={{ marginBottom: '15px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.82rem' }}>
-                  <div style={{ fontWeight: 'bold', color: '#334155', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ fontWeight: '600', color: '#334155', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span>📌</span> Pemetaan Hasil Pembelajaran Subjek:
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                      <span style={{ color: '#64748b', fontWeight: '600' }}>CO/CLO:</span>
+                      <span style={{ color: '#64748b', fontWeight: '500' }}>CO/CLO:</span>
                       {subjectCOs.length > 0 ? subjectCOs.map((co, idx) => (
                         <span key={idx} style={{ backgroundColor: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: '4px', fontWeight: '500', border: '1px solid #7dd3fc' }}>{co}</span>
                       )) : <span style={{ color: '#94a3b8' }}>-</span>}
                     </div>
                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                      <span style={{ color: '#64748b', fontWeight: '600' }}>LO/PLO:</span>
+                      <span style={{ color: '#64748b', fontWeight: '500' }}>LO/PLO:</span>
                       {subjectLOs.length > 0 ? subjectLOs.map((lo, idx) => (
                         <span key={idx} style={{ backgroundColor: '#f5f3ff', color: '#6d28d9', padding: '2px 8px', borderRadius: '4px', fontWeight: '500', border: '1px solid #c4b5fd' }}>{lo}</span>
                       )) : <span style={{ color: '#94a3b8' }}>-</span>}
                     </div>
                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                      <span style={{ color: '#64748b', fontWeight: '600' }}>Domain:</span>
+                      <span style={{ color: '#64748b', fontWeight: '500' }}>Domain:</span>
                       {subjectDomains.length > 0 ? subjectDomains.map((dom, idx) => (
                         <span key={idx} style={{ backgroundColor: '#ffedd5', color: '#c2410c', padding: '2px 8px', borderRadius: '4px', fontWeight: '500', border: '1px solid #fdba74' }}>{dom}</span>
                       )) : <span style={{ color: '#94a3b8' }}>-</span>}
@@ -916,7 +1064,7 @@ export default function PenjanaSoalanPage() {
                 return (
                   <div key={part} style={{ marginBottom: '15px', padding: '15px', backgroundColor: sections[part].enabled ? '#ffffff' : '#f8fafc', borderRadius: '10px', border: sections[part].enabled ? '1px solid #cbd5e1' : '1px dashed #cbd5e1' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: sections[part].enabled ? '12px' : '0' }}>
-                      <label style={{ fontWeight: 'bold', color: sections[part].enabled ? '#0f172a' : '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={sections[part].enabled} onChange={e => updateSection(part, 'enabled', e.target.checked)} style={{ marginRight: '10px' }} />BAHAGIAN {part}</label>
+                      <label style={{ fontWeight: '600', color: sections[part].enabled ? '#0f172a' : '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><input type="checkbox" checked={sections[part].enabled} onChange={e => updateSection(part, 'enabled', e.target.checked)} style={{ marginRight: '10px' }} />BAHAGIAN {part}</label>
                     </div>
                     {sections[part].enabled && (
                       <>
@@ -934,31 +1082,31 @@ export default function PenjanaSoalanPage() {
                         </div>
                         
                         {(sections[part].type === 'objektif') && (
-                           <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
-                              <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#475569', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+                              <label style={{ fontSize: '0.8rem', fontWeight: '500', color: '#475569', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                                 Bilangan Soalan Berlapis (Penyata + Roman):
                                 <input type="number" min="0" max={sections[part].count || 0} value={sections[part].beranakCount || 0} onChange={e => updateSection(part, 'beranakCount', Number(e.target.value))} style={{...styles.input, width: '70px', marginLeft: '10px', padding: '4px 8px'}} />
                               </label>
 
-                              <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#0f766e', display: 'flex', alignItems: 'center', cursor: 'pointer', backgroundColor: '#ccfbf1', padding: '6px 12px', borderRadius: '8px', border: '1px solid #5eead4' }}>
+                              <label style={{ fontSize: '0.8rem', fontWeight: '500', color: '#0f766e', display: 'flex', alignItems: 'center', cursor: 'pointer', backgroundColor: '#ccfbf1', padding: '6px 12px', borderRadius: '8px', border: '1px solid #5eead4' }}>
                                 <input type="checkbox" checked={sections[part].mixedMode || false} onChange={e => updateSection(part, 'mixedMode', e.target.checked)} style={{ marginRight: '8px' }} />
                                 Aktifkan Mod Campuran (20-30% Soalan KECUALI / BENAR / SALAH)
                               </label>
-                           </div>
+                            </div>
                         )}
 
                         <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#f1f5f9', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                           
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                            <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#475569' }}>Pecahan Aras Bloom:</span>
-                            <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: isMatch ? '#16a34a' : '#dc2626', backgroundColor: isMatch ? '#dcfce7' : '#fee2e2', padding: '4px 10px', borderRadius: '12px' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: '600', color: '#475569' }}>Pecahan Aras Bloom:</span>
+                            <span style={{ fontSize: '0.85rem', fontWeight: '600', color: isMatch ? '#16a34a' : '#dc2626', backgroundColor: isMatch ? '#dcfce7' : '#fee2e2', padding: '4px 10px', borderRadius: '12px' }}>
                               Jumlah: {currentSum} / {targetCount} {isMatch ? '✓' : '⚠️'}
                             </span>
                           </div>
 
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
                             {['C1', 'C2', 'C3', 'C4', 'C5', 'C6'].map(level => (
-                              <div key={level} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}><label style={{ fontSize: '0.7rem', color: '#475569', fontWeight: 'bold' }}>{level}</label><input type="number" min="0" value={sections[part].bloom?.[level] ?? 0} onChange={e => setSections((prev: any) => ({ ...prev, [part]: { ...prev[part], bloom: { ...prev[part].bloom, [level]: Number(e.target.value) } } }))} style={{ width: '100%', padding: '6px', textAlign: 'center', borderRadius: '6px', border: '1px solid #cbd5e1' }} /></div>
+                              <div key={level} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}><label style={{ fontSize: '0.7rem', color: '#475569', fontWeight: '600' }}>{level}</label><input type="number" min="0" value={sections[part].bloom?.[level] ?? 0} onChange={e => setSections((prev: any) => ({ ...prev, [part]: { ...prev[part], bloom: { ...prev[part].bloom, [level]: Number(e.target.value) } } }))} style={{ width: '100%', padding: '6px', textAlign: 'center', borderRadius: '6px', border: '1px solid #cbd5e1' }} /></div>
                             ))}
                           </div>
                         </div>
@@ -971,8 +1119,8 @@ export default function PenjanaSoalanPage() {
 
             <div style={styles.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px' }}>
-                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.15rem', fontWeight: 'bold' }}>3. Cakupan Topik & Wajaran (%) <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 'normal' }}>(Optional)</span></h3>
-                <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: isTopicSectionValid ? (isTopicEmpty ? '#64748b' : '#16a34a') : '#dc2626', backgroundColor: isTopicSectionValid ? (isTopicEmpty ? '#f1f5f9' : '#dcfce7') : '#fee2e2', padding: '4px 10px', borderRadius: '12px' }}>
+                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem', fontWeight: '600' }}>3. Cakupan Topik & Wajaran (%) <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'normal' }}>(Optional)</span></h3>
+                <span style={{ fontSize: '0.85rem', fontWeight: '600', color: isTopicSectionValid ? (isTopicEmpty ? '#64748b' : '#16a34a') : '#dc2626', backgroundColor: isTopicSectionValid ? (isTopicEmpty ? '#f1f5f9' : '#dcfce7') : '#fee2e2', padding: '4px 10px', borderRadius: '12px' }}>
                   {isTopicEmpty ? 'Tidak Ditetapkan' : `Jumlah: ${totalTopicPercentage}% ${isTopicSectionValid ? '✓' : '⚠️'}`}
                 </span>
               </div>
@@ -984,7 +1132,7 @@ export default function PenjanaSoalanPage() {
                     <button onClick={() => removeTopic(i)} style={{ padding: '0 10px', backgroundColor: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>✕</button>
                  </div>
               ))}
-              <button onClick={addTopic} style={{ padding: '8px 12px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px dashed #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', width: '100%', fontWeight: 'bold' }}>+ Tambah Topik</button>
+              <button onClick={addTopic} style={{ padding: '8px 12px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px dashed #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', width: '100%', fontWeight: '500' }}>+ Tambah Topik</button>
             </div>
 
             <div style={styles.card}>
@@ -992,8 +1140,8 @@ export default function PenjanaSoalanPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '10px' }}>
                 {['C1', 'C2', 'C3', 'C4', 'C5', 'C6'].map(lvl => (
                    <div key={lvl} style={{ textAlign: 'center', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
-                      <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{lvl}</div>
-                      <div style={{ fontSize: '1.2rem', color: '#2563eb', fontWeight: '900' }}>{requestedBloomCounts[lvl as keyof typeof requestedBloomCounts]}</div>
+                      <div style={{ fontWeight: '600', color: '#0f172a' }}>{lvl}</div>
+                      <div style={{ fontSize: '1.2rem', color: '#2563eb', fontWeight: '800' }}>{requestedBloomCounts[lvl as keyof typeof requestedBloomCounts]}</div>
                    </div>
                 ))}
               </div>
@@ -1002,7 +1150,7 @@ export default function PenjanaSoalanPage() {
             {hasValidationErrors && (
               <div style={{ backgroundColor: '#fef2f2', border: '1px solid #f87171', borderRadius: '12px', padding: '15px', marginBottom: '20px' }}>
                 {validationErrors.map((err, idx) => (
-                  <p key={idx} style={{ color: '#dc2626', fontWeight: 'bold', margin: '0 0 5px 0', fontSize: '0.9rem' }}>
+                  <p key={idx} style={{ color: '#dc2626', fontWeight: '500', margin: '0 0 5px 0', fontSize: '0.9rem' }}>
                     <span style={{ marginRight: '8px' }}>🔴</span>{err}
                   </p>
                 ))}
@@ -1012,7 +1160,7 @@ export default function PenjanaSoalanPage() {
             <button 
               onClick={handleGenerate} 
               disabled={isGenerateDisabled} 
-              style={{ width: '100%', padding: '18px', backgroundColor: isGenerateDisabled ? '#94a3b8' : '#2563eb', color: 'white', border: 'none', borderRadius: '12px', fontSize: '1.1rem', fontWeight: 'bold', cursor: isGenerateDisabled ? 'not-allowed' : 'pointer', marginBottom: '30px' }}
+              style={{ width: '100%', padding: '18px', backgroundColor: isGenerateDisabled ? '#94a3b8' : '#2563eb', color: 'white', border: 'none', borderRadius: '12px', fontSize: '1.1rem', fontWeight: '600', cursor: isGenerateDisabled ? 'not-allowed' : 'pointer', marginBottom: '30px' }}
             >
               {isGenerating ? '⚙ Sistem Modular Sedang Memproses...' : (!isAllSectionsValid || !isTopicSectionValid) ? '⚠️ Sila Cukupkan Aras Bloom & Wajaran Topik' : hasValidationErrors ? '⚠️ Betulkan Purata Markah' : '✨ Jana Kertas Soalan & Skema'}
             </button>
@@ -1020,20 +1168,40 @@ export default function PenjanaSoalanPage() {
 
           <div style={{ flex: '1 1 550px', backgroundColor: '#ffffff', padding: '30px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05)', minHeight: '800px', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #f1f5f9', paddingBottom: '15px', marginBottom: '25px', flexWrap: 'wrap', gap: '10px' }}>
-              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.3rem', fontWeight: '800' }}>Pratonton Kertas Ujian</h3>
+              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.2rem', fontWeight: '700' }}>Pratonton Kertas Ujian</h3>
               {generatedQuestions && !isGenerating && (
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  <button onClick={handleOpenModal} style={{ padding: '8px 14px', backgroundColor: '#f59e0b', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>✏️ Semak Soalan</button>
-                  <button onClick={handleCopy} style={{ padding: '8px 14px', backgroundColor: isCopied ? '#dcfce7' : '#f1f5f9', color: isCopied ? '#166534' : '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>{isCopied ? '✓ Disalin!' : 'Salin'}</button>
-                  <button onClick={handleDownloadQuestionWord} style={{ padding: '8px 14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>📄 MS Word</button>
-                  {generatedScheme && ( <button onClick={handleDownloadSchemeWord} style={{ padding: '8px 14px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>✅ Skema</button> )}
+                  <button onClick={handleOpenModal} style={{ padding: '8px 14px', backgroundColor: '#f59e0b', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '500', fontSize: '0.85rem' }}>✏️ Semak Soalan</button>
+                  <button onClick={handleCopy} style={{ padding: '8px 14px', backgroundColor: isCopied ? '#dcfce7' : '#f1f5f9', color: isCopied ? '#166534' : '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '500', fontSize: '0.85rem' }}>{isCopied ? '✓ Disalin!' : 'Salin'}</button>
+                  <button onClick={handleDownloadQuestionWord} style={{ padding: '8px 14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '500', fontSize: '0.85rem' }}>📄 MS Word</button>
+                  {generatedScheme && ( <button onClick={handleDownloadSchemeWord} style={{ padding: '8px 14px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '500', fontSize: '0.85rem' }}>✅ Skema</button> )}
                   
                   <button 
                     onClick={handleSaveToBank} 
                     disabled={isSavingBank}
-                    style={{ padding: '8px 14px', backgroundColor: isSavedBank ? '#ecfdf5' : '#4f46e5', color: isSavedBank ? '#047857' : 'white', border: isSavedBank ? '1px solid #34d399' : 'none', borderRadius: '8px', cursor: isSavingBank ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', transition: 'all 0.3s' }}
+                    style={{ padding: '8px 14px', backgroundColor: isSavedBank ? '#ecfdf5' : '#4f46e5', color: isSavedBank ? '#047857' : 'white', border: isSavedBank ? '1px solid #34d399' : 'none', borderRadius: '8px', cursor: isSavingBank ? 'not-allowed' : 'pointer', fontWeight: '500', fontSize: '0.85rem', transition: 'all 0.3s' }}
                   >
                     {isSavingBank ? '⏳ Menyimpan...' : isSavedBank ? '✓ Berjaya Disimpan' : '💾 Simpan ke Bank'}
+                  </button>
+
+                  <button 
+                    onClick={() => {
+                      let countQ = 0;
+                      if (generatedQuestions) {
+                        const matches = generatedQuestions.match(/(?:^|\n)\s*(?:BAHAGIAN|PART|الجزء)?\s*[A-Z]?:?\s*\n*\s*\d+[\.\)]/gi);
+                        countQ = matches ? matches.length : 0;
+                      }
+                      setTestSettings(prev => ({ 
+                        ...prev, 
+                        courseCode: courseCode || prev.courseCode,
+                        totalQuestions: countQ || prev.totalQuestions 
+                      }));
+                      setPublishedTestLink(''); 
+                      setShowOnlineTestModal(true);
+                    }} 
+                    style={{ padding: '8px 14px', backgroundColor: '#be185d', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '500', fontSize: '0.85rem', boxShadow: '0 4px 6px -1px rgba(190, 24, 93, 0.4)' }}
+                  >
+                    🌐 Jadikan Ujian Online
                   </button>
                 </div>
               )}
@@ -1049,7 +1217,7 @@ export default function PenjanaSoalanPage() {
                 </div>
                 <div style={{ fontWeight: '800', color: '#2563eb', fontSize: '1.2rem', marginBottom: '10px' }}>{progress}%</div>
 
-                <p style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '10px' }}>{progressText}</p>
+                <p style={{ color: '#0f172a', fontWeight: '600', fontSize: '1.1rem', marginBottom: '10px' }}>{progressText}</p>
                 <p style={{ color: '#64748b', fontStyle: 'italic', fontSize: '0.9rem', textAlign: 'center', maxWidth: '80%', transition: 'opacity 0.5s ease-in-out' }}>{quoteText}</p>
               </div>
             ) : generatedQuestions ? (
@@ -1077,20 +1245,20 @@ export default function PenjanaSoalanPage() {
           <div style={{ backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '950px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
             
             <div style={{ padding: '20px 30px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f8fafc', borderTopLeftRadius: '16px', borderTopRightRadius: '16px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.4rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h2 style={{ margin: 0, fontSize: '1.3rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '600' }}>
                 <span>✏️</span> Semakan Teks & JSU
               </h2>
               
               <div style={{ display: 'flex', backgroundColor: '#e2e8f0', padding: '4px', borderRadius: '8px', gap: '4px' }}>
                 <button 
                   onClick={() => setModalMode('preview')} 
-                  style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.8rem', cursor: 'pointer', backgroundColor: modalMode === 'preview' ? '#2563eb' : 'transparent', color: modalMode === 'preview' ? 'white' : '#475569' }}
+                  style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', fontWeight: '500', fontSize: '0.8rem', cursor: 'pointer', backgroundColor: modalMode === 'preview' ? '#2563eb' : 'transparent', color: modalMode === 'preview' ? 'white' : '#475569' }}
                 >
                   🎨 Paparan Tag Berwarna
                 </button>
                 <button 
                   onClick={() => setModalMode('edit')} 
-                  style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.8rem', cursor: 'pointer', backgroundColor: modalMode === 'edit' ? '#2563eb' : 'transparent', color: modalMode === 'edit' ? 'white' : '#475569' }}
+                  style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', fontWeight: '500', fontSize: '0.8rem', cursor: 'pointer', backgroundColor: modalMode === 'edit' ? '#2563eb' : 'transparent', color: modalMode === 'edit' ? 'white' : '#475569' }}
                 >
                   📝 Mod Suntingan Teks
                 </button>
@@ -1130,20 +1298,20 @@ export default function PenjanaSoalanPage() {
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <button 
                   onClick={handlePrintModal} 
-                  style={{ padding: '10px 16px', backgroundColor: '#475569', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  style={{ padding: '10px 16px', backgroundColor: '#475569', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '500', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
                   🖨️ Cetak / PDF
                 </button>
                 <button 
                   onClick={() => { handleSaveChanges(); setTimeout(() => handleDownloadQuestionWord(), 300); }} 
-                  style={{ padding: '10px 16px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  style={{ padding: '10px 16px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '500', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
                   📄 MS Word (Soalan)
                 </button>
                 {generatedScheme && (
                   <button 
                     onClick={() => { handleSaveChanges(); setTimeout(() => handleDownloadSchemeWord(), 300); }} 
-                    style={{ padding: '10px 16px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    style={{ padding: '10px 16px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '500', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                   >
                     ✅ MS Word (Skema)
                   </button>
@@ -1151,12 +1319,226 @@ export default function PenjanaSoalanPage() {
               </div>
 
               <div style={{ display: 'flex', gap: '12px' }}>
-                <button onClick={() => setShowLevelModal(false)} style={{ padding: '10px 20px', backgroundColor: 'white', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Batal</button>
-                <button onClick={handleSaveChanges} style={{ padding: '10px 20px', backgroundColor: '#f59e0b', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>💾 Simpan Perubahan</button>
+                <button onClick={() => setShowLevelModal(false)} style={{ padding: '10px 20px', backgroundColor: 'white', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '500', cursor: 'pointer' }}>Batal</button>
+                <button onClick={handleSaveChanges} style={{ padding: '10px 20px', backgroundColor: '#f59e0b', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '500', cursor: 'pointer' }}>💾 Simpan Perubahan</button>
               </div>
 
             </div>
             
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TETAPAN UJIAN DALAM TALIAN */}
+      {showOnlineTestModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.75)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', backdropFilter: 'blur(4px)' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '750px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden' }}>
+            
+            <div style={{ padding: '16px 24px', backgroundColor: '#be185d', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                🌐 Tetapan Ujian Dalam Talian
+              </h2>
+              <button onClick={() => setShowOnlineTestModal(false)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '1.3rem', cursor: 'pointer' }}>&times;</button>
+            </div>
+
+            <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              {/* BAHAGIAN 1: MAKLUMAT AKADEMIK & ASAS */}
+              <div style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ margin: '0 0 14px 0', color: '#be185d', fontSize: '0.92rem', fontWeight: '600' }}>📋 Maklumat Akademik & Subjek</h4>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+                  <div>
+                    <label style={styles.label}>Nama Program / Fakulti</label>
+                    <input type="text" value={testSettings.programFaculty} onChange={(e) => setTestSettings({...testSettings, programFaculty: e.target.value})} style={styles.input} placeholder="Cth: Fakulti Sains Komputer" disabled={!!publishedTestLink} />
+                  </div>
+
+                  <div>
+                    <label style={styles.label}>Kod Kursus</label>
+                    <input type="text" value={testSettings.courseCode} onChange={(e) => setTestSettings({...testSettings, courseCode: e.target.value})} style={styles.input} placeholder="Cth: CTU556" disabled={!!publishedTestLink} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+                  <div>
+                    <label style={styles.label}>Tajuk Ujian</label>
+                    <input type="text" value={testSettings.testName} onChange={(e) => setTestSettings({...testSettings, testName: e.target.value})} style={styles.input} placeholder="Cth: Ujian Akhir Semester" disabled={!!publishedTestLink} />
+                  </div>
+
+                  <div>
+                    <label style={styles.label}>Semester / Sesi {isAdmin ? '' : '🔒'}</label>
+                    <select 
+                      value={testSettings.semester} 
+                      onChange={(e) => setTestSettings({...testSettings, semester: e.target.value})} 
+                      style={{...styles.input, backgroundColor: (isAdmin && !publishedTestLink) ? 'white' : '#e2e8f0', cursor: (isAdmin && !publishedTestLink) ? 'pointer' : 'not-allowed', color: (isAdmin && !publishedTestLink) ? '#0f172a' : '#64748b'}}
+                      disabled={!isAdmin || !!publishedTestLink}
+                    >
+                      <option value="Semester 1">Semester 1</option>
+                      <option value="Semester 2">Semester 2</option>
+                      <option value="Semester 3">Semester 3</option>
+                      <option value="Semester 4">Semester 4</option>
+                      <option value="Semester 5">Semester 5</option>
+                      <option value="Semester 6">Semester 6</option>
+                    </select>
+                    {!isAdmin && !publishedTestLink && <span style={{ fontSize: '0.75rem', color: '#ef4444', display: 'block', marginTop: '4px' }}>*Hanya pentadbir boleh menukar sesi.</span>}
+                  </div>
+                </div>
+
+                <div>
+                  <label style={styles.label}>Sasaran Kumpulan Pelajar</label>
+                  <input type="text" value={testSettings.groupName} onChange={(e) => setTestSettings({...testSettings, groupName: e.target.value})} style={styles.input} placeholder="Cth: IC1201A, IC1201B" disabled={!!publishedTestLink} />
+                  <span style={{ fontSize: '0.72rem', color: '#64748b' }}>*Pelajar perlu memilih kumpulan ini semasa mendaftar ujian.</span>
+                </div>
+              </div>
+
+              {/* BAHAGIAN 2: DESKRIPSI & ARAHAN */}
+              <div style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ margin: '0 0 14px 0', color: '#be185d', fontSize: '0.92rem', fontWeight: '600' }}>📝 Deskripsi & Arahan Soalan</h4>
+
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={styles.label}>Deskripsi Ujian</label>
+                  <textarea rows={2} value={testSettings.description} onChange={(e) => setTestSettings({...testSettings, description: e.target.value})} style={{...styles.input, fontFamily: 'inherit'}} placeholder="Penjelasan ringkas mengenai skop ujian..." disabled={!!publishedTestLink} />
+                </div>
+
+                <div>
+                  <label style={styles.label}>Arahan Kepada Calon (Pilihan / Optional)</label>
+                  <textarea rows={2} value={testSettings.instructions} onChange={(e) => setTestSettings({...testSettings, instructions: e.target.value})} style={{...styles.input, fontFamily: 'inherit'}} placeholder="Arahan khas contohnya: Jawab semua soalan dalam Bahagian A..." disabled={!!publishedTestLink} />
+                </div>
+              </div>
+
+              {/* BAHAGIAN 3: MASA, PERCUBAAN & BILANGAN SOALAN */}
+              <div style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ margin: '0 0 14px 0', color: '#be185d', fontSize: '0.92rem', fontWeight: '600' }}>⏱️ Masa, Percubaan & Bilangan Soalan</h4>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+                  <div>
+                    <label style={styles.label}>Tarikh & Masa Dibuka</label>
+                    <input type="datetime-local" value={testSettings.startTime} onChange={(e) => setTestSettings({...testSettings, startTime: e.target.value})} style={styles.input} disabled={!!publishedTestLink} />
+                  </div>
+                  <div>
+                    <label style={styles.label}>Tarikh & Masa Ditutup</label>
+                    <input type="datetime-local" value={testSettings.endTime} onChange={(e) => setTestSettings({...testSettings, endTime: e.target.value})} style={styles.input} disabled={!!publishedTestLink} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
+                  <div>
+                    <label style={styles.label}>Had Masa (Minit)</label>
+                    <input type="number" min="1" value={testSettings.durationMinutes} onChange={(e) => setTestSettings({...testSettings, durationMinutes: Number(e.target.value)})} style={styles.input} disabled={!!publishedTestLink} />
+                  </div>
+
+                  <div>
+                    <label style={styles.label}>Jumlah Soalan (Auto-Capture)</label>
+                    <input 
+                      type="number" 
+                      value={testSettings.totalQuestions} 
+                      readOnly 
+                      style={{ ...styles.input, backgroundColor: '#f1f5f9', color: '#be185d', fontWeight: '600', cursor: 'not-allowed' }} 
+                      title="Diimbas secara automatik daripada senarai soalan yang dijana"
+                    />
+                  </div>
+
+                  <div>
+                    <label style={styles.label}>Bil. Percubaan</label>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      max="10" 
+                      value={testSettings.maxAttempts} 
+                      onChange={(e) => setTestSettings({...testSettings, maxAttempts: Number(e.target.value)})} 
+                      style={styles.input} 
+                      disabled={!!publishedTestLink}
+                    />
+                    <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '2px', display: 'block' }}>
+                      * 1 = sekali sahaja, 2 = 2 kali, dsb.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* BAHAGIAN 4: PAPARAN & KESELAMATAN */}
+              <div style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ margin: '0 0 14px 0', color: '#be185d', fontSize: '0.92rem', fontWeight: '600' }}>⚙️ Tetapan Paparan & Keselamatan</h4>
+                
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={styles.label}>Gaya Paparan Soalan</label>
+                  <select value={testSettings.pagination} onChange={(e) => setTestSettings({...testSettings, pagination: e.target.value})} style={styles.input} disabled={!!publishedTestLink}>
+                    <option value="all">Semua Sebaris (Satu Halaman Penuh)</option>
+                    <option value="section">Mengikut Bahagian (Bahagian A, B, C)</option>
+                    <option value="single">Satu Soalan Satu Paparan (Strict)</option>
+                  </select>
+                </div>
+
+                <label style={{ display: 'flex', alignItems: 'center', marginBottom: '12px', cursor: publishedTestLink ? 'not-allowed' : 'pointer', fontWeight: '500', color: '#334155', fontSize: '0.85rem' }}>
+                  <input type="checkbox" checked={testSettings.reshuffle} onChange={(e) => setTestSettings({...testSettings, reshuffle: e.target.checked})} style={{ marginRight: '10px', width: '16px', height: '16px' }} disabled={!!publishedTestLink} />
+                  Susun Atur Rawak (Reshuffle Soalan & Pilihan Jawapan)
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'flex-start', cursor: publishedTestLink ? 'not-allowed' : 'pointer', fontWeight: '500', color: '#be185d', fontSize: '0.85rem' }}>
+                  <input type="checkbox" checked={testSettings.strictProctoring} onChange={(e) => setTestSettings({...testSettings, strictProctoring: e.target.checked})} style={{ marginRight: '10px', width: '16px', height: '16px', marginTop: '2px' }} disabled={!!publishedTestLink} />
+                  <div>
+                    Aktifkan Pengawasan Ketat (Strict Proctoring)
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'normal' }}>Halang Copy-Paste, pengesanan Tab dilarang, dan wajibkan Skrin Penuh (Fullscreen).</div>
+                  </div>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'flex-start', cursor: publishedTestLink ? 'not-allowed' : 'pointer', fontWeight: '500', color: '#7c3aed', marginTop: '12px', fontSize: '0.85rem' }}>
+                  <input type="checkbox" checked={testSettings.requireWebcam} onChange={(e) => setTestSettings({...testSettings, requireWebcam: e.target.checked})} style={{ marginRight: '10px', width: '16px', height: '16px', marginTop: '2px' }} disabled={!!publishedTestLink} />
+                  <div>
+                    Aktifkan Pemantauan Kamera AI (Face Tracking)
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'normal', marginTop: '2px' }}>Mewajibkan akses webkam pelajar. Sistem akan merakam pergerakan muka dan memberi amaran jika wajah tidak dikesan.</div>
+                  </div>
+                </label>
+              </div>
+
+              {/* BAHAGIAN 5: MEDAN PAUTAN AKSES UJIAN PELAJAR */}
+              <div style={{ backgroundColor: publishedTestLink ? '#f0fdf4' : '#f8fafc', padding: '18px', borderRadius: '12px', border: `1px solid ${publishedTestLink ? '#86efac' : '#e2e8f0'}` }}>
+                <h4 style={{ margin: '0 0 10px 0', color: publishedTestLink ? '#166534' : '#be185d', fontSize: '0.92rem', fontWeight: '600' }}>
+                  🔗 Pautan Akses Ujian Pelajar
+                </h4>
+                
+                {publishedTestLink ? (
+                  <div>
+                    <p style={{ margin: '0 0 8px 0', fontSize: '0.8rem', color: '#15803d', fontWeight: '500' }}>
+                      Pautan ujian telah sedia! Salin dan kongsikan pautan ini kepada pelajar anda:
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input type="text" value={publishedTestLink} readOnly style={{ ...styles.input, backgroundColor: 'white', color: '#0f172a', fontWeight: '500' }} />
+                      <button 
+                        type="button"
+                        onClick={handleCopyTestLink} 
+                        style={{ padding: '8px 16px', backgroundColor: isCopiedLink ? '#16a34a' : '#15803d', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '500', fontSize: '0.85rem', whiteSpace: 'nowrap' }}
+                      >
+                        {isCopiedLink ? '✅ Tersalin!' : '📋 Salin Pautan'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic' }}>
+                    * Pautan rasmi ujian akan dijana secara automatik sebaik sahaja anda menekan butang "Klik untuk Proses".
+                  </p>
+                )}
+              </div>
+
+            </div>
+
+            <div style={{ padding: '16px 24px', backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button 
+                onClick={() => setShowOnlineTestModal(false)} 
+                style={{ padding: '8px 18px', backgroundColor: 'white', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}
+              >
+                Batal
+              </button>
+              
+              <button 
+                onClick={handleCreateOnlineTest} 
+                disabled={isPublishingTest}
+                style={{ padding: '8px 20px', backgroundColor: publishedTestLink ? '#16a34a' : '#be185d', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '500', cursor: isPublishingTest ? 'not-allowed' : 'pointer', fontSize: '0.85rem' }}
+              >
+                {isPublishingTest ? '⏳ Memproses...' : publishedTestLink ? '🚀 Terbitkan Ujian Sekarang' : '⚙️ Klik untuk Proses'}
+              </button>
+            </div>
+
           </div>
         </div>
       )}

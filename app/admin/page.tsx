@@ -19,11 +19,12 @@ export default function AdminDashboardPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdminAuth, setIsAdminAuth] = useState(false);
+  const [adminProfile, setAdminProfile] = useState<any>(null);
   
-  // Tab State
-  const [activeTab, setActiveTab] = useState<'pending' | 'active' | 'credit'>('pending');
+  // Tab State (Ditambah 'tests' untuk Pemantauan Ujian)
+  const [activeTab, setActiveTab] = useState<'pending' | 'active' | 'credit' | 'tests'>('pending');
 
-  // State Modal Tetapan Kredit
+  // ==================== STATE PENGGUNA ====================
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const [selectedCreditUser, setSelectedCreditUser] = useState<any | null>(null);
   const [dailyLimit, setDailyLimit] = useState<number>(15);
@@ -31,15 +32,25 @@ export default function AdminDashboardPage() {
   const [isUnlimited, setIsUnlimited] = useState<boolean>(false);
   const [isSubmittingCredit, setIsSubmittingCredit] = useState<boolean>(false);
 
-  // State Modal Lihat/View Pengguna
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [viewUser, setViewUser] = useState<any | null>(null);
 
-  // State Modal Edit Pengguna (Kemas Kini Profil & Peranan)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editUser, setEditUser] = useState<any | null>(null);
   const [editData, setEditData] = useState({ name: '', faculty: '', phone: '', role: 'user' });
   const [isSubmittingEdit, setIsSubmittingEdit] = useState<boolean>(false);
+
+  // ==================== STATE PEMANTAUAN UJIAN (BARU) ====================
+  const [allTests, setAllTests] = useState<any[]>([]);
+  const [allSessions, setAllSessions] = useState<any[]>([]);
+  const [filterSemester, setFilterSemester] = useState('');
+  const [filterCourseCode, setFilterCourseCode] = useState('');
+  
+  const [showEditTestModal, setShowEditTestModal] = useState(false);
+  const [editingTest, setEditingTest] = useState<any>(null);
+  const [editCourseCode, setEditCourseCode] = useState('');
+  const [editSemester, setEditSemester] = useState('');
+  const [isSavingTest, setIsSavingTest] = useState(false);
 
   useEffect(() => {
     checkAdminAccess();
@@ -47,12 +58,25 @@ export default function AdminDashboardPage() {
 
   const checkAdminAccess = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    const localUser = typeof window !== 'undefined' ? localStorage.getItem('abqari_user') : null;
+
+    let userEmail = user?.email || '';
+    let userRole = user?.user_metadata?.role || '';
+    let userName = user?.user_metadata?.full_name || 'Pentadbir';
+
+    if (!user && localUser) {
+       const parsed = JSON.parse(localUser);
+       userEmail = parsed.email || '';
+       userRole = parsed.role || '';
+       userName = parsed.name || 'Pentadbir';
+    }
+
+    if (!userEmail && !user) {
       router.push('/login');
       return;
     }
 
-    const isAdmin = SUPERADMIN_EMAILS.includes(user.email || '') || user.user_metadata?.role === 'admin';
+    const isAdmin = SUPERADMIN_EMAILS.includes(userEmail) || userRole === 'admin';
 
     if (!isAdmin) {
       alert('Akses Ditolak: Anda bukan pentadbir (Admin) sistem ini.');
@@ -61,9 +85,14 @@ export default function AdminDashboardPage() {
     }
 
     setIsAdminAuth(true);
+    setAdminProfile({ name: userName, email: userEmail });
+    
+    // Muatkan Data Pengguna & Data Ujian Serentak
     fetchUsers();
+    fetchTestsData();
   };
 
+  // --- FUNGSI DATA PENGGUNA ---
   const fetchUsers = async () => {
     setIsLoading(true);
     try {
@@ -165,7 +194,6 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // FUNGSI MEMBUKA MODAL EDIT
   const openEditModal = (u: any) => {
     if (SUPERADMIN_EMAILS.includes(u.email)) {
       alert('🛡️ RALAT KESELAMATAN: Maklumat Akaun Superadmin Utama tidak boleh disunting.');
@@ -181,14 +209,12 @@ export default function AdminDashboardPage() {
     setIsEditModalOpen(true);
   };
 
-  // FUNGSI MENYIMPAN HASIL SUNTINGAN PROFIL
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editUser) return;
 
     setIsSubmittingEdit(true);
     try {
-      // Kita menggunakan kaedah 'PATCH' (action: 'update_profile') ke api/admin/users
       const res = await fetch('/api/admin/users', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -197,7 +223,7 @@ export default function AdminDashboardPage() {
           userId: editUser.id,
           profileData: {
             full_name: editData.name,
-            name: editData.name, // update both fields just in case
+            name: editData.name, 
             faculty: editData.faculty,
             phone: editData.phone,
             role: editData.role
@@ -209,7 +235,7 @@ export default function AdminDashboardPage() {
       if (json.success || res.ok) {
         alert(`✅ Profil ${editData.name} berjaya dikemas kini!`);
         setIsEditModalOpen(false);
-        fetchUsers(); // Refresh the table
+        fetchUsers(); 
       } else {
         alert(`Ralat: ${json.error || 'Gagal mengemas kini profil.'}`);
       }
@@ -226,7 +252,6 @@ export default function AdminDashboardPage() {
       alert('🛡️ Akaun Superadmin mempunyai akses tanpa had secara automatik. Tiada tetapan diperlukan.');
       return;
     }
-
     setSelectedCreditUser(u);
     setDailyLimit(u.daily_limit || 15);
     setBonusCredit(u.bonus_credit || 0);
@@ -272,6 +297,61 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // --- FUNGSI DATA UJIAN DALAM TALIAN ---
+  const fetchTestsData = async () => {
+    try {
+      const { data: testsData } = await supabase.from('online_tests').select('*').order('created_at', { ascending: false });
+      if (testsData) setAllTests(testsData);
+
+      const { data: sessionsData } = await supabase.from('test_sessions').select('id, test_id, status');
+      if (sessionsData) setAllSessions(sessionsData);
+    } catch (error) {
+      console.error("Ralat memuat turun data ujian:", error);
+    }
+  };
+
+  const openEditTestModal = (test: any) => {
+    setEditingTest(test);
+    setEditCourseCode(test.course_code || '');
+    setEditSemester(test.semester || '');
+    setShowEditTestModal(true);
+  };
+
+  const handleSaveTestEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTest) return;
+    setIsSavingTest(true);
+    try {
+      const { error } = await supabase
+        .from('online_tests')
+        .update({ course_code: editCourseCode, semester: editSemester })
+        .eq('id', editingTest.id);
+
+      if (error) throw error;
+
+      setAllTests(prev => prev.map(t => t.id === editingTest.id ? { ...t, course_code: editCourseCode, semester: editSemester } : t));
+      setShowEditTestModal(false);
+      alert('✅ Berjaya! Kod Kursus dan Semester telah dikemaskini.');
+    } catch (error: any) {
+      alert(`Gagal menyimpan: ${error.message}`);
+    } finally {
+      setIsSavingTest(false);
+    }
+  };
+
+  const handleDeleteTest = async (testId: string, testName: string) => {
+    if (!window.confirm(`⚠️ AMARAN PENTADBIR ⚠️\n\nAdakah anda pasti mahu MENGHAPUSKAN ujian "${testName}" secara kekal? Semua rekod pelajar untuk ujian ini juga akan terhapus.`)) return;
+    try {
+      const { error } = await supabase.from('online_tests').delete().eq('id', testId);
+      if (error) throw error;
+      setAllTests(prev => prev.filter(t => t.id !== testId));
+      alert('🗑️ Ujian berjaya dihapuskan.');
+    } catch (error: any) {
+      alert(`Gagal memadam: ${error.message}`);
+    }
+  };
+
+  // --- PEMPROSESAN DATA PAPARAN ---
   if (!isAdminAuth) return null;
 
   const processedUsers = users.map(u => {
@@ -283,6 +363,18 @@ export default function AdminDashboardPage() {
 
   const pendingUsers = processedUsers.filter(u => !u.is_approved && u.status !== 'approved');
   const approvedUsers = processedUsers.filter(u => u.is_approved || u.status === 'approved');
+
+  // Saringan Ujian
+  const uniqueCourseCodes = Array.from(new Set(allTests.map(t => t.course_code).filter(Boolean)));
+  const uniqueSemesters = Array.from(new Set(allTests.map(t => t.semester).filter(Boolean)));
+  const filteredTests = allTests.filter(t => {
+    const matchSemester = filterSemester ? t.semester === filterSemester : true;
+    const matchCourse = filterCourseCode ? t.course_code === filterCourseCode : true;
+    return matchSemester && matchCourse;
+  });
+
+  const totalOngoingSessions = allSessions.filter(s => s.status === 'ongoing').length;
+  const totalCompletedSessions = allSessions.filter(s => s.status === 'completed' || s.status === 'terminated').length;
 
   const styles = {
     page: { backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '"Inter", "Segoe UI", sans-serif', paddingBottom: '60px' },
@@ -345,7 +437,7 @@ export default function AdminDashboardPage() {
             🛡️ Modul Pentadbir ABQARI
           </h1>
           <p style={{ margin: 0, color: '#e2e8f0', fontSize: '0.95rem' }}>
-            Kawalan Kelulusan Akses & Pengurusan Kuota Kredit Pensyarah
+            Kawalan Akses Pengguna, Pengurusan Kredit & Pemantauan Peperiksaan.
           </p>
         </div>
       </div>
@@ -355,17 +447,23 @@ export default function AdminDashboardPage() {
         {/* KONTROL TAB */}
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
           <button style={styles.tabBtn(activeTab === 'pending')} onClick={() => setActiveTab('pending')}>
-            ⏳ Menunggu Kelulusan ({pendingUsers.length})
+            ⏳ Kelulusan Pengguna ({pendingUsers.length})
           </button>
           <button style={styles.tabBtn(activeTab === 'active')} onClick={() => setActiveTab('active')}>
             👥 Pensyarah Aktif ({approvedUsers.length})
           </button>
           <button style={styles.tabBtn(activeTab === 'credit')} onClick={() => setActiveTab('credit')}>
-            💳 Pengurusan Kredit ({approvedUsers.length})
+            💳 Pengurusan Kredit
+          </button>
+          {/* TAB BAHARU: PEMANTAUAN UJIAN */}
+          <button style={styles.tabBtn(activeTab === 'tests')} onClick={() => setActiveTab('tests')}>
+            📝 Pemantauan Ujian ({allTests.length})
           </button>
         </div>
 
-        {/* TAB 1: MENUNGGU KELULUSAN */}
+        {/* =========================================================
+            TAB 1: MENUNGGU KELULUSAN
+        ========================================================= */}
         {activeTab === 'pending' && (
           <div style={{ ...styles.card, borderTop: '5px solid #f59e0b' }}>
             <h3 style={{ margin: '0 0 20px 0', color: '#0f172a', fontSize: '1.2rem', fontWeight: '800' }}>
@@ -415,7 +513,9 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 2: PENSYARAH AKTIF */}
+        {/* =========================================================
+            TAB 2: PENSYARAH AKTIF
+        ========================================================= */}
         {activeTab === 'active' && (
           <div style={{ ...styles.card, borderTop: '5px solid #3b0764' }}>
             <h3 style={{ margin: '0 0 20px 0', color: '#0f172a', fontSize: '1.2rem', fontWeight: '800' }}>
@@ -474,7 +574,9 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 3: PENGURUSAN KREDIT PENSYARAH */}
+        {/* =========================================================
+            TAB 3: PENGURUSAN KREDIT PENSYARAH
+        ========================================================= */}
         {activeTab === 'credit' && (
           <div style={{ ...styles.card, borderTop: '5px solid #8b5cf6' }}>
             <h3 style={{ margin: '0 0 20px 0', color: '#0f172a', fontSize: '1.2rem', fontWeight: '800' }}>
@@ -544,7 +646,119 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
+        {/* =========================================================
+            TAB 4: PEMANTAUAN UJIAN DALAM TALIAN (BARU)
+        ========================================================= */}
+        {activeTab === 'tests' && (
+          <>
+            {/* STATISTIK UJIAN */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '25px' }}>
+              <div style={{ ...styles.card, borderLeft: '4px solid #3b82f6', marginBottom: 0 }}>
+                <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>JUMLAH UJIAN DIDAFTARKAN</div>
+                <div style={{ fontSize: '2rem', color: '#0f172a', fontWeight: '900' }}>{allTests.length}</div>
+              </div>
+              <div style={{ ...styles.card, borderLeft: '4px solid #eab308', marginBottom: 0 }}>
+                <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>PELAJAR SEDANG MENJAWAB (LIVE)</div>
+                <div style={{ fontSize: '2rem', color: '#eab308', fontWeight: '900' }}>{totalOngoingSessions} <span style={{ fontSize: '1rem', fontWeight: 'normal' }}>pelajar</span></div>
+              </div>
+              <div style={{ ...styles.card, borderLeft: '4px solid #10b981', marginBottom: 0 }}>
+                <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>UJIAN SELESAI / DIHANTAR</div>
+                <div style={{ fontSize: '2rem', color: '#10b981', fontWeight: '900' }}>{totalCompletedSessions} <span style={{ fontSize: '1rem', fontWeight: 'normal' }}>rekod</span></div>
+              </div>
+            </div>
+
+            {/* KAWALAN & SARINGAN UJIAN */}
+            <div style={{ ...styles.card, borderTop: '5px solid #10b981' }}>
+              <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#0f172a', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🔍</span> Saringan Ujian & Kawalan Parameter
+              </h3>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '25px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', marginBottom: '8px' }}>Saring Mengikut Semester / Sesi:</label>
+                  <select value={filterSemester} onChange={(e) => setFilterSemester(e.target.value)} style={styles.input}>
+                    <option value="">Semua Semester</option>
+                    {uniqueSemesters.map((sem, i) => <option key={i} value={sem as string}>{sem as string}</option>)}
+                  </select>
+                </div>
+                
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', marginBottom: '8px' }}>Saring Mengikut Kod Kursus:</label>
+                  <select value={filterCourseCode} onChange={(e) => setFilterCourseCode(e.target.value)} style={styles.input}>
+                    <option value="">Semua Kod Kursus</option>
+                    {uniqueCourseCodes.map((code, i) => <option key={i} value={code as string}>{code as string}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem' }}>Senarai Induk Ujian Dalam Talian</h3>
+                <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>{filteredTests.length} rekod ditemui</span>
+              </div>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={{...styles.th, width: '40px'}}>Bil.</th>
+                      <th style={{...styles.th, minWidth: '100px'}}>Kod Kursus</th>
+                      <th style={{...styles.th, minWidth: '220px'}}>Nama Ujian / Kumpulan</th>
+                      <th style={{...styles.th, minWidth: '120px'}}>Semester</th>
+                      <th style={{...styles.th, minWidth: '180px'}}>Dicipta Oleh (Pensyarah)</th>
+                      <th style={{...styles.th, minWidth: '120px'}}>Calon Mendaftar</th>
+                      <th style={{...styles.th, textAlign: 'center', minWidth: '180px'}}>Tindakan Admin</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredTests.length > 0 ? filteredTests.map((test, index) => {
+                      const testSessionCount = allSessions.filter(s => s.test_id === test.id).length;
+                      return (
+                        <tr key={test.id} style={{ transition: 'background-color 0.2s' }} onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                          <td style={{ ...styles.td, color: '#64748b' }}>{index + 1}.</td>
+                          <td style={{ ...styles.td, fontWeight: 'bold', color: '#3b82f6' }}>{test.course_code || 'N/A'}</td>
+                          <td style={styles.td}>
+                            <div style={{ fontWeight: 'bold' }}>{test.test_name}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>Kumpulan: {test.group_name || 'Umum'}</div>
+                          </td>
+                          <td style={styles.td}>
+                            <span style={{ backgroundColor: '#f1f5f9', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', border: '1px solid #e2e8f0' }}>{test.semester || 'N/A'}</span>
+                          </td>
+                          <td style={styles.td}>
+                            <div style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{test.lecturer_name || 'Tidak Diketahui'}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{new Date(test.created_at).toLocaleDateString('ms-MY')}</div>
+                          </td>
+                          <td style={styles.td}>
+                            <span style={{ backgroundColor: testSessionCount > 0 ? '#dcfce7' : '#f1f5f9', color: testSessionCount > 0 ? '#166534' : '#64748b', padding: '4px 10px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                              {testSessionCount} Calon
+                            </span>
+                          </td>
+                          <td style={{ ...styles.td, textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <button onClick={() => openEditTestModal(test)} style={styles.btnView}>
+                                ✏️ Edit
+                              </button>
+                              <button onClick={() => handleDeleteTest(test.id, test.test_name)} style={styles.btnReject}>
+                                🗑️ Padam
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }) : (
+                      <tr><td colSpan={7} style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>Tiada ujian ditemui berdasarkan saringan.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
       </div>
+
+      {/* =========================================================
+          SEMUA MODAL DI BAWAH INI
+      ========================================================= */}
 
       {/* MODAL 1: LIHAT BUTIRAN PENUH (VIEW USER) */}
       {isViewModalOpen && viewUser && (
@@ -750,6 +964,70 @@ export default function AdminDashboardPage() {
                   style={{ backgroundColor: '#8b5cf6', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}
                 >
                   {isSubmittingCredit ? '⏳ Menyimpan...' : '💾 Simpan Tetapan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: KEMASKINI UJIAN DALAM TALIAN (EDIT TEST) */}
+      {showEditTestModal && editingTest && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalBox}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.2rem', fontWeight: '800' }}>
+                ✏️ Kawalan Parameter Ujian Admin
+              </h3>
+              <button onClick={() => setShowEditTestModal(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleSaveTestEdit}>
+              <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#f1f5f9', borderRadius: '8px', fontSize: '0.85rem', color: '#475569' }}>
+                Mengemaskini parameter untuk ujian: <strong>{editingTest.test_name}</strong>
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={styles.viewLabel}>Kod Kursus (Boleh Diubah)</label>
+                <input 
+                  type="text" 
+                  value={editCourseCode} 
+                  onChange={(e) => setEditCourseCode(e.target.value)} 
+                  style={styles.input} 
+                />
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={styles.viewLabel}>Semester / Sesi (Boleh Diubah)</label>
+                <select 
+                  value={editSemester} 
+                  onChange={(e) => setEditSemester(e.target.value)} 
+                  style={styles.input}
+                >
+                  <option value="Semester 1">Semester 1</option>
+                  <option value="Semester 2">Semester 2</option>
+                  <option value="Semester 3">Semester 3</option>
+                  <option value="Semester 4">Semester 4</option>
+                  <option value="Semester 5">Semester 5</option>
+                  <option value="Semester 6">Semester 6</option>
+                </select>
+                <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', display: 'block' }}>*Pensyarah biasa tidak boleh mengubah parameter ini. Hanya Pentadbir (Admin) yang boleh menetapkannya.</span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '25px', borderTop: '1px solid #e2e8f0', paddingTop: '15px' }}>
+                <button 
+                  type="button" 
+                  onClick={() => setShowEditTestModal(false)}
+                  style={{ backgroundColor: 'transparent', border: '1px solid #cbd5e1', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', color: '#475569' }}
+                >
+                  Batal
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSavingTest}
+                  style={{ backgroundColor: '#f59e0b', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  {isSavingTest ? '⏳ Menyimpan...' : '💾 Simpan Perubahan'}
                 </button>
               </div>
             </form>
