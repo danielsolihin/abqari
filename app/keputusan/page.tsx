@@ -57,6 +57,7 @@ function formatDate(dateString: string) {
 }
 
 export default function KeputusanPage() {
+  const [isAdmin, setIsAdmin] = useState(false); // STATE BARU: Kenal pasti role pengguna
   const [tests, setTests] = useState<any[]>([]);
   const [selectedTestId, setSelectedTestId] = useState('');
   const [selectedTest, setSelectedTest] = useState<any>(null);
@@ -96,11 +97,38 @@ export default function KeputusanPage() {
   const [activeEditHighlight, setActiveEditHighlight] = useState<{ id: string, type: string, mark: number, qIndex: number, x: number, y: number } | null>(null);
   const [editHighlightMark, setEditHighlightMark] = useState<number>(0);
 
-  // 1. KEMAS KINI: Tangkap testId dari URL selepas ujian dimuatkan
+  // 1. KEMAS KINI PENYELASAIAN BUG: Auth dan Filter Ujian Berdasarkan User ID
   useEffect(() => {
-    const fetchTests = async () => {
-      const { data } = await supabase.from('online_tests').select('*');
-      if (data) {
+    const fetchTestsAndRole = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      let currentUser = session?.user || null;
+      let isAdminCheck = false;
+
+      // Semak user dalam LocalStorage sebagai fallback
+      const localUser = typeof window !== 'undefined' ? localStorage.getItem('abqari_user') : null;
+      
+      if (currentUser) {
+        isAdminCheck = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'].includes(currentUser.email || '') || currentUser.user_metadata?.role === 'admin';
+      } else if (localUser) {
+        try {
+          const parsed = JSON.parse(localUser);
+          currentUser = parsed; // Guna ID dari localStorage
+          isAdminCheck = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'].includes(parsed.email || '') || parsed.role === 'admin';
+        } catch (e) {}
+      }
+
+      setIsAdmin(isAdminCheck);
+
+      // Bina Query Asas
+      let query = supabase.from('online_tests').select('*');
+      
+      // TAPISAN KETAT: Jika BUKAN Admin, hanya keluarkan ujian ciptaan user ini sahaja
+      if (!isAdminCheck && currentUser?.id) {
+        query = query.eq('user_id', currentUser.id);
+      }
+
+      const { data, error } = await query;
+      if (data && !error) {
         setTests(data.reverse());
         
         if (typeof window !== 'undefined') {
@@ -112,7 +140,7 @@ export default function KeputusanPage() {
         }
       }
     };
-    fetchTests();
+    fetchTestsAndRole();
   }, []);
 
   const fetchSessionsData = async (testId: string) => {
@@ -657,7 +685,11 @@ export default function KeputusanPage() {
 
       <div className="no-print" style={{ backgroundColor: '#3b0764', padding: '20px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 style={{ color: '#fde047', margin: 0, fontSize: '1.8rem', fontWeight: '900', letterSpacing: '1px' }}>ABQARI <span style={{color: 'white', fontWeight: '300'}}>| Papan Pemuka Keputusan</span></h1>
-        <Link href="/tetapan" style={{ color: 'white', textDecoration: 'none', backgroundColor: 'rgba(255,255,255,0.1)', padding: '8px 15px', borderRadius: '8px', fontSize: '0.9rem' }}>← Kembali</Link>
+        
+        {/* 2. KEMASKINI PENYELESAIAN BUG: Butang Kembali mengikut Role (Admin/Normal) */}
+        <Link href={isAdmin ? "/tetapan" : "/"} style={{ color: 'white', textDecoration: 'none', backgroundColor: 'rgba(255,255,255,0.1)', padding: '8px 15px', borderRadius: '8px', fontSize: '0.9rem' }}>
+          ← Kembali
+        </Link>
       </div>
 
       <div style={{ maxWidth: '1400px', margin: '40px auto', padding: '0 20px' }}>

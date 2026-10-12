@@ -306,7 +306,8 @@ export async function POST(req: NextRequest) {
       domain = [],
       language = "Bahasa Melayu",
       fullQuestions = "",
-      mixedMode = false // KAWALAN MOD CAMPURAN
+      mixedMode = false, // KAWALAN MOD CAMPURAN
+      singleMode = false // KAWALAN MOD SOALAN TUNGGAL
     } = body;
 
     const apiKey = process.env.OPENAI_API_KEY;
@@ -324,24 +325,24 @@ export async function POST(req: NextRequest) {
         schemaPrompt = `أنت خبير في إعداد نموذج الإجابة لامتحانات جامعة UiTM.
 قدم نموذج الإجابة كامل وفقط للأسئلة الموجودة في ورقة الأسئلة أدناه (${language}).
 1. إذا كانت الورقة تحتوي على أسئلة اختيار من متعدد فقط: اذكر رقم السؤال وحرف الإجابة فقط العمودية (مثال: 1. A).
-
 2. إذا كانت هناك أسئلة مقالية: أعد كتابة نص السؤال الأصلي قبل تقديم الإجابة في شكل نقاط مع توزيع الدرجات.
+3. يُمنع منعاً باتاً استخدام الرموز (*) أو (#) أو العناوين الرئيسية المكررة.
 ورقة الأسئلة:
 ${fullQuestions}`;
       } else if (isEnglish) {
         schemaPrompt = `You are a UiTM University Examination Examiner.
 Provide a COMPLETE ANSWER SCHEME ONLY for the questions present in the QUESTION PAPER below (${language}).
 1. IF THE PAPER CONTAINS OBJECTIVE / TRUE-FALSE: State ONLY the question number and answer letter vertically (e.g., 1. A).
-
 2. IF ESSAY QUESTIONS ARE PRESENT: REPEAT THE ORIGINAL QUESTION STATEMENT before providing point-form answers with marks.
+3. DO NOT use any asterisk (*) or hashtag (#) symbols or document title headers.
 QUESTION PAPER:
 ${fullQuestions}`;
       } else {
         schemaPrompt = `Anda adalah Pemeriksa Kertas Peperiksaan UiTM. 
 Sediakan SKEMA JAWAPAN LENGKAP HANYA bagi soalan yang wujud dalam KERTAS SOALAN di bawah (${language}).
 1. JIKA KERTAS SOALAN HANYA ADA OBJEKTIF / BENAR-SALAH: HANYA nyatakan nombor soalan dan abjad jawapan (Contoh: 1. A).
-
 2. JIKA ADA SOALAN ESEI: WAJIB MENYERTAKAN SEMULA SOALAN ASAL sebelum memberikan skema jawapan dalam bentuk POINT (Bullet) berserta markah.
+3. DILARANG sama sekali menggunakan simbol asterisk (*), hashtag (#), atau tajuk utama seperti "SKEMA JAWAPAN LENGKAP...".
 KERTAS SOALAN:
 ${fullQuestions}`;
       }
@@ -358,7 +359,14 @@ ${fullQuestions}`;
 
       const openaiData = await openaiRes.json();
       if (!openaiRes.ok) throw new Error(openaiData.error?.message || "Gagal menjana skema.");
-      return NextResponse.json({ success: true, data: openaiData.choices?.[0]?.message?.content || "" });
+      
+      let cleanSchema = openaiData.choices?.[0]?.message?.content || "";
+      cleanSchema = cleanSchema.replace(/[\*#]/g, ''); // Buang simbol * dan #
+      cleanSchema = cleanSchema.replace(/SKEMA JAWAPAN LENGKAP[\s\S]*?---\n*/gi, '');
+      cleanSchema = cleanSchema.replace(/SKEMA JAWAPAN LENGKAP.*?\n/gi, '');
+      cleanSchema = cleanSchema.replace(/^---\n*/gm, '');
+
+      return NextResponse.json({ success: true, data: cleanSchema.trim() });
     }
 
     let targetSubjectId = subjectId;
@@ -391,8 +399,8 @@ ${fullQuestions}`;
 
     const activeSec = Array.isArray(sectionData) ? sectionData[0] : (sectionData || (Array.isArray(sections) ? sections[0] : sections) || body);
     
-    // PEMBETULAN BUG: isMixedMode dipastikan dibaca dari activeSec dengan selamat
     const isMixedMode = mixedMode === true || String(mixedMode).toLowerCase() === "true" || sectionData?.mixedMode === true || activeSec?.mixedMode === true;
+    const isSingleMode = singleMode === true || String(singleMode).toLowerCase() === "true" || sectionData?.singleMode === true || activeSec?.singleMode === true;
 
     const rawType = String(activeSec?.type || activeSec?.format || activeSec?.questionType || body?.type || body?.format || "objektif").toLowerCase();
 
@@ -426,9 +434,7 @@ ${fullQuestions}`;
     const coOptions = formattedCOs.join(', ');
 
     // ============================================================
-    // PENGIRAAN MARKAH DINAMIK (BARU) KHAS UNTUK ESEI / SUBJEKTIF
-    // Menggunakan pemetaan statik ketat supaya markah SENTIASA .0 atau .5
-    // Halangan: Soalan tanpa pecahan maksimum 2.5 Markah
+    // PENGIRAAN MARKAH DINAMIK KHAS UNTUK ESEI / SUBJEKTIF
     // ============================================================
     const totalSectionMarks = parseNum(sectionData?.marks) || parseNum(activeSec?.marks) || 10;
     const marksPerQ = count > 0 ? totalSectionMarks / count : 1;
@@ -436,7 +442,11 @@ ${fullQuestions}`;
     let subCount = 1;
     let exactSubMarks = marksPerQ;
 
-    if (marksPerQ === 1) { subCount = 1; exactSubMarks = 1; }
+    if (isSingleMode) {
+      // JIKA MOD SOALAN TUNGGAL DIAKTIFKAN: HANYA 1 SOALAN TUNGGAL DENGAN MARKAH FULL
+      subCount = 1;
+      exactSubMarks = marksPerQ;
+    } else if (marksPerQ === 1) { subCount = 1; exactSubMarks = 1; }
     else if (marksPerQ === 1.5) { subCount = 1; exactSubMarks = 1.5; }
     else if (marksPerQ === 2) { subCount = 1; exactSubMarks = 2; }
     else if (marksPerQ === 2.5) { subCount = 1; exactSubMarks = 2.5; }
@@ -463,9 +473,8 @@ ${fullQuestions}`;
     else if (marksPerQ === 19) { subCount = 2; exactSubMarks = 9.5; }
     else if (marksPerQ === 20) { subCount = 4; exactSubMarks = 5; }
     else {
-        // Fallback keselamatan 
-        subCount = 1;
-        exactSubMarks = marksPerQ;
+      subCount = 1;
+      exactSubMarks = marksPerQ;
     }
 
     const subMarksDisplay = exactSubMarks % 1 === 0 ? exactSubMarks.toString() : exactSubMarks.toFixed(1);
@@ -548,16 +557,13 @@ ${fullQuestions}`;
         } else if (beranak > 0) {
           beranakRuleNoteAr = `\nتنبيه هام جداً لترتيب وكمية الأسئلة (يجب الالتزام به حرفياً):
 - عدد الأسئلة العادية: ${biasaCount} أسئلة بالضبط. (الأسئلة المرقمة من 1 إلى ${biasaCount} يجب أن تكون أسئلة عادية فقط).
-
 - عدد الأسئلة المركبة: ${beranak} أسئلة بالضبط. (الأسئلة المرقمة من ${biasaCount + 1} إلى ${count} يجب أن تكون أسئلة مركبة وتستخدم أرقام رومانية).
-
 لا تقم بتغيير هذه الكميات!`;
         }
 
         formatInstructions = `
 متطلبات العدد الصارمة:
 - إجمالي الأسئلة: ${count} أسئلة بالضبط (مرقمة من 1 إلى ${count}).
-
 - تحذير حرج: توقف عن التوليد فوراً بعد السؤال رقم ${count}.
 
 ${beranakRuleNoteAr}
@@ -586,9 +592,7 @@ ${bloomMappingAr}
 
 تعليمات الأسئلة المركبة:
 - السطر الأول الذي يحتوي على رقم السؤال يجب أن يكون عبارة تقريرية فقط وتنتهي بنقطة (.). لا تضع علامة استفهام (؟) في هذا السطر أبداً!
-
 - ثم، اترك سطراً فارغاً واكتب السؤال الفعلي. يجب أن يكون السؤال مكتملاً.
-
 
 [مثال صحيح - يجب اتباعه]:
 2.\tيُعتبر الإجماع المصدر الثالث من مصادر التشريع الإسلامي.
@@ -659,16 +663,13 @@ ${bloomVerbsInstruction}
         } else if (beranak > 0) {
           beranakRuleNoteEng = `\nCRITICAL ORDER AND QUANTITY WARNING (YOU MUST STRICTLY FOLLOW THIS):
 - REGULAR QUESTIONS AMOUNT: Exactly ${biasaCount} questions. (Question numbers 1 to ${biasaCount} MUST be REGULAR objective questions).
-
 - BRANCHED QUESTIONS AMOUNT: Exactly ${beranak} questions. (Question numbers ${biasaCount + 1} to ${count} MUST be BRANCHED objective questions with roman numerals).
-
 DO NOT change these exact amounts!`;
         }
 
         formatInstructions = `
 STRICT QUANTITY REQUIREMENT:
 - TOTAL QUESTIONS: EXACTLY ${count} QUESTIONS.
-
 - CRITICAL WARNING: STOP GENERATING IMMEDIATELY AFTER QUESTION ${count}.
 
 ${beranakRuleNoteEng}
@@ -775,16 +776,13 @@ EXAMPLE:
         } else if (beranak > 0) {
           beranakRuleNote = `\nAMARAN KETAT SUSUNAN & KUANTITI SOALAN (ANDA WAJIB PATUH 100%):
 - JUMLAH SOALAN BIASA: Tepat ${biasaCount} soalan. (Soalan nombor 1 hingga ${biasaCount} MESTILAH SOALAN BIASA SAHAJA tanpa item roman).
-
 - JUMLAH SOALAN BERANAK: Tepat ${beranak} soalan. (Soalan nombor ${biasaCount + 1} hingga ${count} MESTILAH SOALAN BERANAK beritem roman i, ii, iii, iv).
-
 DILARANG menambah atau mengurangkan kuantiti ini!`;
         }
 
         formatInstructions = `
 PENGATURAN KUANTITI SOALAN (AMARAN SANGAT MUTLAK):
 - JUMLAH KESELURUHAN SOALAN: TEPAT ${count} SOALAN SAHAJA.
-
 - AMARAN KERAS: ANDA WAJIB BERHENTI MENJANA SEBAIK SAHAJA SOALAN KE-${count} SELESAI!
 
 ${beranakRuleNote}
@@ -828,7 +826,7 @@ CONTOH LENGKAP C3-C6 (Penyata & Soalan Bercantum):
 \t[C3] [CO2]
 
 ARAHAN SOALAN BERANAK (BERLAPIS - WAJIB PATUH SUSUNAN KETAT):
-- Baris 1: Nombor Soalan + Ayat Penyata Fakta / Senario Lengkap diakhiri dengan TITIK (.) SAHAJA. DILARANG KERAS meletakkan kata tanya ('Apakah'/'Bagaimanakah') أو tanda soal (?) di Baris 1 ini!
+- Baris 1: Nombor Soalan + Ayat Penyata Fakta / Senario Lengkap diakhiri dengan TITIK (.) SAHAJA. DILARANG KERAS meletakkan kata tanya ('Apakah'/'Bagaimanakah') atau tanda soal (?) di Baris 1 ini!
 - <ENTER JARAK / SELANG SEBARIS> + DITAIP 1 TAB (\\t) + SATU AYAT SOALAN UTAMA LENGKAP BERSERTA TANDA SOAL (cth: "\\tApakah antara berikut yang paling tepat...", "\\tApakah langkah yang perlu diambil...?"). HARAM menamatkan ayat utama dengan titik bertindih (:).
 - <ENTER JARAK / SELANG SEBARIS> + DITAIP 1 TAB (\\t) + ITEM ROMAN (\\ti. ..., \\tii. ..., \\tiii. ..., \\tiv. ...).
 - Pilihan Jawapan A, B, C, D (\\tA. ..., \\tB. ..., \\tC. ..., \\tD. ...). (Bagi soalan beranak, pilihan gabungan "D. Semua di atas" adalah DIBENARKAN).
@@ -871,7 +869,7 @@ ${bloomVerbsInstruction}
 
 PERATURAN FORMAT ESEI & TATABAHASA (AMARAN KERAS MUTLAK):
 1. PENGIRAAN MARKAH (WAJIB PATUH): Setiap soalan utama bernilai ${marksPerQ} markah. Anda WAJIB memecahkan setiap soalan utama kepada TEPAT ${subCount} anak soalan (${subLabelsStr}) dengan nilai ${subMarksDisplay} Markah setiap satu!
-2. KEPALA SOALAN (sebelah nombor 1, 2, 3...) WAJIB merupakan AYAT PENYATA LENGKAP (Fakta/Stimulus) yang DITAMATKAN DENGAN TITIK (.). DILARANG SAMA SEKALI memulakan kepala soalan dengan kata perintah, dan DILARANG mengakhirinya با tanda soal (?)!
+2. KEPALA SOALAN (sebelah nombor 1, 2, 3...) WAJIB merupakan AYAT PENYATA LENGKAP (Fakta/Stimulus) yang DITAMATKAN DENGAN TITIK (.). DILARANG SAMA SEKALI memulakan kepala soalan dengan kata perintah, dan DILARANG mengakhirinya dengan tanda soal (?)!
 3. KATA PERINTAH BLOOM HANYA BOLEH DIGUNAKAN PADA ANAK SOALAN (${subLabelsStr}) SAHAJA. (Pastikan ia adalah ayat perintah murni bebas imbuhan Me, Meng, Men - Contoh yang betul: "Bincangkan", "Huraikan", "Nilaikan", "Rekaciptakan").
 
 CONTOH STRUKTUR ESEI WAJIB PATUH:
@@ -927,7 +925,7 @@ CONTOH STRUKTUR ESEI WAJIB PATUH:
       
       mixedModeInstMs = `1. MOD CAMPURAN (ANALISIS PENGESAHAN & PENGECUALIAN):
    - Anda akan diarahkan untuk membina soalan berbentuk Analisis Pengecualian / Pengesahan secara spesifik pada pemetaan soalan di bawah.
-   - FORMAT AYAT: DILARANG SAMA SEKALI memulakan soalan dengan perkataan "Yang". Gunakan struktur seperti "Berikut adalah elemen penting X, KECUALI:" أو "Pernyataan manakah yang BENAR mengenai X?".
+   - FORMAT AYAT: DILARANG SAMA SEKALI memulakan soalan dengan perkataan "Yang". Gunakan struktur seperti "Berikut adalah elemen penting X, KECUALI:" atau "Pernyataan manakah yang BENAR mengenai X?".
 
 2. TIGA (3) PERATURAN EMAS DISTRAKTOR (SANGAT PENTING):
    - ATURAN KONSEP RAKAN (PEER CONCEPTS): Distraktor WAJIB dari kategori domain/topik yang sama.
@@ -975,7 +973,7 @@ CONTOH STRUKTUR ESEI WAJIB PATUH:
    - SINTAKSIS SELARI (PARALLEL SYNTAX): Keempat-empat pilihan (A, B, C, D) WAJIB bermula dengan struktur tatabahasa yang sama dan ukuran kepanjangan yang setara.
 
 3. SENARAI HITAM KATA AKAR PENOLAK (AMARAN KERAS MUTLAK!):
-   - Anda HARAM menggunakan sebarang bentuk kata akar 'abai' (mengabaikan, pengabaian, terabai), 'asing' (mengasingkan, pengasingan), 'hanya', 'sahaja', 'semata-mata', 'hapus' (menghapuskan, penghapusan), 'tidak sah', 'tanpa', أو 'musuh' dalam MANA-MANA pilihan jawapan salah!
+   - Anda HARAM menggunakan sebarang bentuk kata akar 'abai' (mengabaikan, pengabaian, terabai), 'asing' (mengasingkan, pengasingan), 'hanya', 'sahaja', 'semata-mata', 'hapus' (menghapuskan, penghapusan), 'tidak sah', 'tanpa', atau 'musuh' dalam MANA-MANA pilihan jawapan salah!
    - DISTRAKTOR WAJIB PLAUSIBLE & POSITIF: Pilihan jawapan salah MESTI berbunyi akademik, profesional, menggunakan kata kerja positif (seperti menyediakan, memfokuskan, menyelaras, menetapkan) tetapi KONSEP/FAKTANYA SALAH.
    - [CONTOH DISTRAKTOR BURUK / HARAM DIGUNAKAN]: "Mengabaikan peraturan permainan" / "Hiburan semata-mata" / "Pengasingan subjek".
    - [CONTOH DISTRAKTOR BERKUALITI / WAJIB DITIRU]: "Memaksimumkan intensiti latihan fizikal untuk kemenangan" / "Menyeragamkan kaedah pentaksiran tunggal bagi semua tahap".
@@ -989,9 +987,8 @@ CONTOH STRUKTUR ESEI WAJIB PATUH:
       systemPrompt = `أنت خبير في إعداد الامتحانات الجامعية (UiTM) لمادة ${courseCode} - ${courseName}.
 شرط اللغة الصارم: يجب عليك إنشاء جميع الأسئلة والنصوص والخيارات والفقرات بنسبة 100% باللغة العربية.
 
-قاعدة الربط بالنص المرفق (STRICT CONTEXT GROUNDING):
+ARAHAN PENGIKATAN DOKUMEN / NOTA:
 1. يجب عليك إنشاء الأسئلة بناءً على النص المرفق أدناه فقط بنسبة 100%. (استثناء: يسمح لك بإنشاء أسماء شخصيات أو مواقف خيالية من أجل أسئلة السيناريو التطبيقية).
-
 2. يُمنع منعاً باتاً اختراع أو إدخال أي مواضيع عامة خارج نطاق النص المرفق.
 
 عناصر التنويع وجودة المشتتات (إلزامي 100%):
@@ -1006,9 +1003,8 @@ ${formatInstructions}
 
 قواعد مطلقة:
 1. وسم JSU الكامل يجب وضعه في السطر الأخير لكل سؤال ويكون محاذى بـ Tab (\\t). (وسمين فقط: مستويات بلوم و CO).
-
-2. يُمنع استخدام النجوم (* أو **).
-3. يمنع منعا باتا كتابة تعليقات أو تبريرات أو شرح لخياراتك داخل ورقة الأسئلة. فقط اكتب الأسئلة والخيارات والوسم النهائي.
+2. يُمنع استخدام النجوم (* أو **) أو الرمز (#).
+3. يمنع منعا باتا كتابة عناوين رئيسية مثل "نموذج الإجابة..." أو أي تعليقات أو تبريرات داخل ورقة الأسئلة.
 4. للأسئلة الموضوعية: يجب عليك توفير 4 خيارات (A, B, C, D) لكل سؤال. لا تترك أي سؤال بدون خيارات.
 5. توزيع المواضيع: يجب تنويع الأسئلة لتشمل جميع المواضيع في النص المعطى بشكل متوازن. لا تركز فقط على موضوع واحد إذا كانت هناك مواضيع أخرى.
 6. تحذير أخير: يُمنع منعاً باتاً استخدام كلمات مثل "تجاهل"، "فقط"، "دون" في الخيارات (A, B, C, D).
@@ -1021,7 +1017,6 @@ CRITICAL LANGUAGE MANDATE: You MUST generate ALL questions, statements, options,
 
 STRICT CONTEXT GROUNDING RULE:
 1. You MUST generate questions 100% EXCLUSIVELY and STRICTLY based on the facts present in the COURSE NOTES / CONTEXT provided below. (Exception: You are allowed to invent scenario situations or character names for practical application questions).
-
 2. DO NOT hallucinate or introduce outside general knowledge facts!
 
 MIXED MODE DISTRIBUTION & STRICT DISTRACTOR QUALITY (100% MANDATORY):
@@ -1036,9 +1031,8 @@ ${formatInstructions}
 
 ABSOLUTE RULES:
 1. FULL JSU TAG MUST be placed at the very bottom line of every question and MUST be indented with 1 tab (\\t). (EXACTLY 2 TAGS: Bloom and CO).
-
-2. DO NOT use bullet points (* or **).
-3. STRICT PROHIBITION: DO NOT write any comments, rationale, justifications, or Bloom's explanations inside the question paper. ONLY output the questions, options, and the final tag.
+2. DO NOT use bullet points (* or **) or hashtags (#).
+3. STRICT PROHIBITION: DO NOT write any title headers (such as "QUESTION PAPER..."), comments, rationale, or Bloom's explanations. ONLY output the questions, options, and the final tag.
 4. FOR OBJECTIVE QUESTIONS: You MUST provide 4 options (A, B, C, D) for every single question. NEVER leave a question without options.
 5. TOPIC DISTRIBUTION: You MUST vary the questions to cover ALL topics provided in the context evenly. DO NOT focus repeatedly on a single topic if other topics are present.
 6. FINAL WARNING: DO NOT use the words "ignore", "solely", or "only" in ANY of the options A, B, C, D.
@@ -1050,7 +1044,6 @@ ${finalContext}`;
 
 ARAHAN PENGIKATAN DOKUMEN / NOTA (STRICT CONTEXT GROUNDING MUTLAK):
 1. Anda WAJIB menggubal soalan 100% BERDASARKAN DAN BERSUMBERKAN TEKS NOTA KURSUS di bawah SAHAJA. (Pengecualian: Anda DIBENARKAN mencipta nama watak atau situasi rekaan HANYA untuk tujuan membina soalan berbentuk senario/Kajian Kes, asalkan FAKTA JAWAPAN masih bersumberkan nota).
-
 2. DILARANG SAMA SEKALI mereka-reka atau membawa masuk fakta am di luar kandungan dokumen!
 
 ARAHAN VARIASI SOALAN & KUALITI DISTRAKTOR (WAJIB PATUH 100%):
@@ -1065,11 +1058,10 @@ ${formatInstructions}
 
 PERATURAN MUTLAK KERTAS SOALAN:
 1. TAG JSU LENGKAP WAJIB ada di baris akhir setiap soalan dan WAJIB di-tab (\\t). Rujuk Peta Susunan yang diberi. (TEPAT 2 TAG SAHAJA: Bloom dan CO).
-
-2. DILARANG menggunakan tanda bintik (* atau **).
-3. AMARAN KERAS: DILARANG SAMA SEKALI menulis ulasan, rasional, justifikasi rubrik atau sebarang nota penerangan di dalam kertas soalan! Anda hanya dibenarkan mencetak TEKS SOALAN, PILIHAN JAWAPAN, dan TAG JSU SAHAJA.
-4. BUKAN SOALAN SUBJEKTIF: Ini adalah soalan Objektif. Anda WAJIB menjana tepat 4 pilihan jawapan (A, B, C, D) bagi SETIAP soalan sebelum meletakkan tag JSU.
-5. PENGAGIHAN TOPIK: Anda WAJIB memvariasikan soalan merangkumi KESELURUHAN topik/konteks yang diberikan secara seimbang. JANGAN tertumpu pada satu topik berulang kali (contohnya Falsafah Pendidikan Kebangsaan) jika ada topik lain di dalam nota.
+2. DILARANG menggunakan tanda bintik (* atau **) atau hashtag (#).
+3. AMARAN KERAS: DILARANG SAMA SEKALI menulis tajuk pengepala seperti "KERTAS SOALAN...", ulasan, rasional, atau sebarang nota penerangan! Anda hanya dibenarkan mencetak TEKS SOALAN, PILIHAN JAWAPAN, dan TAG JSU SAHAJA.
+4. BUKAN SOALAN SUBJEKTIF: Jika ini soalan Objektif, anda WAJIB menjana tepat 4 pilihan jawapan (A, B, C, D) bagi SETIAP soalan sebelum meletakkan tag JSU.
+5. PENGAGIHAN TOPIK: Anda WAJIB memvariasikan soalan merangkumi KESELURUHAN topik/konteks yang diberikan secara seimbang. JANGAN tertumpu pada satu topik berulang kali jika ada topik lain di dalam nota.
 6. AMARAN TERAKHIR: DILARANG SAMA SEKALI meletakkan perkataan MENGABAIKAN, SEMATA-MATA, atau SAHAJA dalam senarai pilihan jawapan A, B, C, D.
 
 NOTA KURSUS:
@@ -1091,17 +1083,48 @@ ${finalContext}`;
 
     let rawOutput = openaiData.choices?.[0]?.message?.content || "";
 
-    const finalCleanData = cleanAndTransformQuestions(rawOutput, language, questionType);
+    let finalCleanData = cleanAndTransformQuestions(rawOutput, language, questionType);
+
+    // ============================================================
+    // PEMBERSIHAN KETAT UNTUK PENGEMASAN KERTAS SOALAN (NO METADATA, NO *, NO #, NO [JSU])
+    // ============================================================
+    // 1. Buang pengepala metadata jika terjana
+    finalCleanData = finalCleanData.replace(/KERTAS SOALAN PEPERIKSAAN[\s\S]*?---\n*/gi, '');
+    finalCleanData = finalCleanData.replace(/KURSUS:[\s\S]*?---\n*/gi, '');
+    finalCleanData = finalCleanData.replace(/^---\n*/gm, '');
+
+    // 2. Buang perkataan tag [JSU] secara selamat (tidak memadam huruf J, S, U dalam perkataan biasa)
+    finalCleanData = finalCleanData.split('[JSU]').join('');
+    finalCleanData = finalCleanData.split('[jsu]').join('');
+    finalCleanData = finalCleanData.split('[Jsu]').join('');
+
+    // 3. Buang sebarang simbol * dan #
+    finalCleanData = finalCleanData.replace(/[\*#]/g, '');
+
+    // 4. Buang nota penutup di bahagian bawah
+    finalCleanData = finalCleanData.replace(/---\s*Nota:[\s\S]*$/gi, '');
+    finalCleanData = finalCleanData.replace(/Nota:[\s\S]*$/gi, '');
+
+    finalCleanData = finalCleanData.trim();
+
+    // ============================================================
+    // KAWALAN KUANTITI MUTLAK (HARD CUT-OFF) JIKA AI BERHALUSINASI
+    // ============================================================
+    if (mode !== "SCHEMA") {
+      const individualQuestions = splitIntoIndividualQuestions(finalCleanData);
+      if (individualQuestions.length > count) {
+        finalCleanData = individualQuestions.slice(0, count).join('\n\n');
+      }
+    }
 
     // ============================================================
     // PEMASUKAN AUTOMATIK KE SUPABASE
     // ============================================================
     if (targetSubjectId) {
-      const individualQuestions = splitIntoIndividualQuestions(finalCleanData);
-      const exactQuestions = individualQuestions.slice(0, count);
+      const exactQuestionsForDb = splitIntoIndividualQuestions(finalCleanData);
 
-      if (exactQuestions.length > 0) {
-        const insertPayload = exactQuestions.map((qText) => {
+      if (exactQuestionsForDb.length > 0) {
+        const insertPayload = exactQuestionsForDb.map((qText) => {
           const bloomMatch = qText.match(/\[(C[1-6]\vert{}P[1-5]\vert{}A[1-5])\]/i);
           const detectedBloom = bloomMatch ? bloomMatch[1].toUpperCase() : "C1";
 

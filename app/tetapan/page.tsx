@@ -399,7 +399,7 @@ export default function PengurusanUjianOnline() {
                     <th style={{...styles.th, minWidth: '220px'}}>Nama Ujian</th>
                     <th style={{...styles.th, minWidth: '160px'}}>Dicipta Oleh</th>
                     <th style={{...styles.th, minWidth: '120px', textAlign: 'center'}}>Statistik Pelajar</th>
-                    <th style={{...styles.th, textAlign: 'center', minWidth: '280px'}}>Tindakan (Khas Admin)</th>
+                    <th style={{...styles.th, textAlign: 'center', minWidth: '260px'}}>Tindakan (Khas Admin)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -450,25 +450,29 @@ export default function PengurusanUjianOnline() {
                             )}
                           </div>
                         </td>
+                        
+                        {/* KEMASKINI: SUSUNAN GRID 2x2 BUTANG TINDAKAN */}
                         <td style={{ ...styles.td, textAlign: 'center' }}>
-                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                            <button onClick={() => openEditModal(test)} style={{ ...styles.btnSecondary, backgroundColor: '#f59e0b', color: 'white' }}>
-                              ✏️ Edit / Aktifkan
-                            </button>
-                            
-                            <Link href={`/keputusan?testId=${test.id}`} style={{ ...styles.btnSecondary, backgroundColor: '#3b82f6' }}>
-                              👀 Semak
-                            </Link>
-                            
-                            <button onClick={() => openPrintModal(test)} style={{ ...styles.btnSecondary, backgroundColor: '#8b5cf6' }}>
-                              🖨️ Cetak Laporan
-                            </button>
-                            
-                            <button onClick={() => handleDeleteTest(test.id, test.test_name)} style={styles.btnDanger}>
-                              🗑️ Padam
-                            </button>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%', maxWidth: '240px', margin: '0 auto' }}>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button onClick={() => openEditModal(test)} style={{ ...styles.btnSecondary, backgroundColor: '#f59e0b', flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', whiteSpace: 'nowrap', padding: '6px 0', boxSizing: 'border-box' }}>
+                                ✏️ Edit
+                              </button>
+                              <Link href={`/keputusan?testId=${test.id}`} style={{ ...styles.btnSecondary, backgroundColor: '#3b82f6', flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', whiteSpace: 'nowrap', padding: '6px 0', boxSizing: 'border-box' }}>
+                                👀 Semak
+                              </Link>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button onClick={() => openPrintModal(test)} style={{ ...styles.btnSecondary, backgroundColor: '#8b5cf6', flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', whiteSpace: 'nowrap', padding: '6px 0', boxSizing: 'border-box' }}>
+                                🖨️ Laporan
+                              </button>
+                              <button onClick={() => handleDeleteTest(test.id, test.test_name)} style={{ ...styles.btnDanger, flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', whiteSpace: 'nowrap', padding: '6px 0', boxSizing: 'border-box' }}>
+                                🗑️ Padam
+                              </button>
+                            </div>
                           </div>
                         </td>
+
                       </tr>
                     );
                   }) : (

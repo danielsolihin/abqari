@@ -185,6 +185,7 @@ export default function PenjanaSoalanPage() {
   const router = useRouter();
   
   const [subjects, setSubjects] = useState<any[]>([]);
+  const [managedSemesters, setManagedSemesters] = useState<any[]>([]); // KEMASKINI: TAMBAH STATE SEMESTER
   const [selectedSubject, setSelectedSubject] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -208,10 +209,11 @@ export default function PenjanaSoalanPage() {
 
   const [topicDistribution, setTopicDistribution] = useState<{name: string, percentage: string}[]>([{ name: '', percentage: '' }]);
 
+  // KEMASKINI: MENAMBAH singleMode: false DALAM STRUKTUR ASAL SECTIONS
   const [sections, setSections] = useState<any>({
-    A: { enabled: true, type: 'objektif', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 }, beranakCount: 0, mixedMode: false },
-    B: { enabled: true, type: 'true_false', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 }, beranakCount: 0, mixedMode: false },
-    C: { enabled: true, type: 'essay', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 }, beranakCount: 0, mixedMode: false }
+    A: { enabled: true, type: 'objektif', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 }, beranakCount: 0, mixedMode: false, singleMode: false },
+    B: { enabled: true, type: 'true_false', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 }, beranakCount: 0, mixedMode: false, singleMode: false },
+    C: { enabled: true, type: 'essay', count: 0, marks: 0, bloom: { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0 }, beranakCount: 0, mixedMode: false, singleMode: false }
   });
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -292,6 +294,25 @@ export default function PenjanaSoalanPage() {
       } catch (err) { console.error('Ralat:', err); }
     };
     fetchUserProfile();
+  }, []);
+
+  // KEMASKINI: BACA SEMESTER DARI DATABASE ADMIN SECARA DINAMIK
+  useEffect(() => {
+    const fetchSemesters = async () => {
+      try {
+        const { data, error } = await supabase.from('semesters').select('*').order('created_at', { ascending: true });
+        if (data && !error) {
+          setManagedSemesters(data);
+          // Set pilihan lalai ke semester pertama dalam jadual jika belum diset
+          if (data.length > 0) {
+            setTestSettings(prev => ({ ...prev, semester: data[0].name }));
+          }
+        }
+      } catch (err) {
+        console.error('Ralat memuatkan semester:', err);
+      }
+    };
+    fetchSemesters();
   }, []);
 
   useEffect(() => {
@@ -683,7 +704,6 @@ export default function PenjanaSoalanPage() {
       const finalEndTime = testSettings.endTime ? new Date(testSettings.endTime).toISOString() : tomorrow.toISOString();
 
       // PAYLOAD TERAS (PASTI SELAMAT)
-      // *KEMASKINI: display_style DITETAPKAN SECARA LANGSUNG DI DALAM SETTINGS JSON*
       const corePayload: any = {
         user_id: userProfile.id || null,
         faculty: testSettings.programFaculty || userProfile.faculty || 'Fakulti Umum',
@@ -699,8 +719,8 @@ export default function PenjanaSoalanPage() {
         questions_data: { rawText: generatedQuestions },
         scheme_data: { rawText: generatedScheme },
         settings: {
-          pagination: testSettings.pagination, // Memegang nilai 'all', 'section', atau 'single'
-          display_style: testSettings.pagination, // Simpan pendua untuk pastikan dibaca
+          pagination: testSettings.pagination,
+          display_style: testSettings.pagination,
           reshuffle: testSettings.reshuffle,
           strictProctoring: testSettings.strictProctoring,
           requireWebcam: testSettings.requireWebcam,
@@ -720,7 +740,7 @@ export default function PenjanaSoalanPage() {
         semester: testSettings.semester,
         total_questions: Number(testSettings.totalQuestions) || 0,
         max_attempts: Number(testSettings.maxAttempts) || 1,
-        display_style: testSettings.pagination // Hantar juga ke lajur root jika wujud
+        display_style: testSettings.pagination
       };
 
       let savedData: any = null;
@@ -937,7 +957,7 @@ export default function PenjanaSoalanPage() {
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '45px', paddingTop: '10px' }}>
           
-           <Link
+            <Link
             href="/"
             style={{
               display: 'inline-flex',
@@ -1092,6 +1112,26 @@ export default function PenjanaSoalanPage() {
                                 <input type="checkbox" checked={sections[part].mixedMode || false} onChange={e => updateSection(part, 'mixedMode', e.target.checked)} style={{ marginRight: '8px' }} />
                                 Aktifkan Mod Campuran (20-30% Soalan KECUALI / BENAR / SALAH)
                               </label>
+                            </div>
+                        )}
+
+                        {/* KEMASKINI BAHARU: SUIS KAWALAN MOD SOALAN TUNGGAL UNTUK FORMAT ESEI / SUBJEKTIF */}
+                        {(sections[part].type === 'essay') && (
+                            <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              <label style={{ fontSize: '0.8rem', fontWeight: '500', color: '#be185d', display: 'flex', alignItems: 'center', cursor: 'pointer', backgroundColor: '#fce7f3', padding: '8px 12px', borderRadius: '8px', border: '1px solid #fbcfe8' }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={sections[part].singleMode || false} 
+                                  onChange={e => updateSection(part, 'singleMode', e.target.checked)} 
+                                  style={{ marginRight: '10px', width: '16px', height: '16px' }} 
+                                />
+                                🎯 Aktifkan Mod Soalan Tunggal (Markah Penuh Per Soalan - Tanpa Anak Soalan a, b, c)
+                              </label>
+                              {sections[part].singleMode && sections[part].count > 0 && sections[part].marks > 0 && (
+                                <span style={{ fontSize: '0.75rem', color: '#059669', fontStyle: 'italic', marginLeft: '4px' }}>
+                                  ✓ Purata {(sections[part].marks / sections[part].count).toFixed(1)} markah bagi setiap 1 soalan tunggal.
+                                </span>
+                              )}
                             </div>
                         )}
 
@@ -1373,12 +1413,13 @@ export default function PenjanaSoalanPage() {
                       style={{...styles.input, backgroundColor: (isAdmin && !publishedTestLink) ? 'white' : '#e2e8f0', cursor: (isAdmin && !publishedTestLink) ? 'pointer' : 'not-allowed', color: (isAdmin && !publishedTestLink) ? '#0f172a' : '#64748b'}}
                       disabled={!isAdmin || !!publishedTestLink}
                     >
-                      <option value="Semester 1">Semester 1</option>
-                      <option value="Semester 2">Semester 2</option>
-                      <option value="Semester 3">Semester 3</option>
-                      <option value="Semester 4">Semester 4</option>
-                      <option value="Semester 5">Semester 5</option>
-                      <option value="Semester 6">Semester 6</option>
+                      {managedSemesters.length > 0 ? (
+                        managedSemesters.map((sem, idx) => (
+                          <option key={sem.id || idx} value={sem.name}>{sem.name}</option>
+                        ))
+                      ) : (
+                        <option value="Semester 1">Semester 1</option>
+                      )}
                     </select>
                     {!isAdmin && !publishedTestLink && <span style={{ fontSize: '0.75rem', color: '#ef4444', display: 'block', marginTop: '4px' }}>*Hanya pentadbir boleh menukar sesi.</span>}
                   </div>

@@ -315,7 +315,9 @@ export default function LiveExamRoom() {
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [warningCount, setWarningCount] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
   const [hasStarted, setHasStarted] = useState(false); 
+  const [proctoringReady, setProctoringReady] = useState(false); // STATE BARU: Grace Period Keselamatan
   
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
@@ -376,6 +378,22 @@ export default function LiveExamRoom() {
   const handleStartExam = () => {
     enterFullscreen();
     setHasStarted(true);
+
+    // KEMASKINI: "Buka Kunci" (Pre-warm) Audio Context sebaik sahaja user klik supaya tak disekat
+    try {
+      const audio = new Audio('/warning-sound.mp3');
+      audio.play().then(() => { audio.pause(); audio.currentTime = 0; }).catch(() => {});
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        ctx.resume();
+      }
+    } catch(e) {}
+
+    // KEMASKINI: Berikan 'Grace Period' 5 saat supaya popup 'Allow Camera' tidak dianggap sebagai tab-switch/hilang fokus!
+    setTimeout(() => {
+      setProctoringReady(true);
+    }, 5000);
   };
 
   // 2. SISTEM PENGIRAAN MASA (TIMER)
@@ -396,7 +414,8 @@ export default function LiveExamRoom() {
 
   // 3. ENJIN PROCTORING KESELAMATAN (TAB-SWITCHING)
   useEffect(() => {
-    if (!hasStarted || !testData?.settings?.strictProctoring || isSubmitting) return;
+    // KEMASKINI: Hanya aktifkan pengawasan SELEPAS tempoh 'grace period' 5 saat tamat
+    if (!proctoringReady || !testData?.settings?.strictProctoring || isSubmitting) return;
 
     const handleVisibilityChange = () => { if (document.hidden) handleWarning('Keluar dari tetingkap peperiksaan (Tab-Switch).'); };
     const handleWindowBlur = () => {
@@ -424,7 +443,7 @@ export default function LiveExamRoom() {
       document.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [hasStarted, testData, warningCount, isSubmitting]);
+  }, [proctoringReady, testData, warningCount, isSubmitting]);
 
   // FUNGSI PUSAT AMARAN
   const handleWarning = async (reason: string) => {
@@ -513,7 +532,12 @@ export default function LiveExamRoom() {
           <span style={{ fontSize: '4rem' }}>🎓</span>
           <h2 style={{ color: '#0f172a', marginBottom: '10px' }}>Sedia untuk bermula?</h2>
           <p style={{ color: '#475569', marginBottom: '30px', lineHeight: '1.6' }}>
-            Ujian ini akan dijalankan dalam mod <strong>Skrin Penuh (Fullscreen)</strong>. Anda dilarang membuka sebarang tab atau aplikasi lain setelah mula.
+            {testData?.settings?.requireWebcam ? (
+               <span>Sila benarkan akses kamera webkam <strong>(Allow Camera)</strong> jika diminta. Ujian akan berjalan dalam mod <strong>Skrin Penuh</strong>.</span>
+            ) : (
+               <span>Ujian ini akan dijalankan dalam mod <strong>Skrin Penuh (Fullscreen)</strong>.</span>
+            )}
+            <br/><br/>Anda dilarang membuka sebarang tab atau aplikasi lain setelah mula.
           </p>
           <button onClick={handleStartExam} style={{ backgroundColor: '#2563eb', color: 'white', padding: '15px 30px', border: 'none', borderRadius: '8px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', width: '100%', boxShadow: '0 4px 6px rgba(37, 99, 235, 0.3)' }}>
             Masuk Dewan Ujian

@@ -73,10 +73,16 @@ export default function StudentPortal() {
   // Kemas kini senarai kumpulan apabila kursus dipilih
   useEffect(() => {
     if (selectedCourse) {
-      const filteredGroups = activeTests
-        .filter(t => t.faculty === selectedFaculty && t.course_code === selectedCourse)
-        .map(t => t.group_name);
-      setGroups(Array.from(new Set(filteredGroups)).sort());
+      // KEMASKINI PENYELESAIAN BUG: Memecahkan rentetan "A, B, C" kepada ["A", "B", "C"] secara individu
+      let rawGroups: string[] = [];
+      activeTests.filter(t => t.faculty === selectedFaculty && t.course_code === selectedCourse).forEach(t => {
+        if (t.group_name) {
+          const splitGroups = t.group_name.split(',').map((g: string) => g.trim()).filter(Boolean);
+          rawGroups = [...rawGroups, ...splitGroups];
+        }
+      });
+      
+      setGroups(Array.from(new Set(rawGroups)).sort());
       setSelectedGroup('');
     } else {
       setGroups([]);
@@ -90,11 +96,13 @@ export default function StudentPortal() {
       return;
     }
 
-    const matchedTests = activeTests.filter(t => 
-      t.faculty === selectedFaculty && 
-      t.course_code === selectedCourse && 
-      t.group_name === selectedGroup
-    );
+    // KEMASKINI PENYELESAIAN BUG CARIAN: Membolehkan padanan ujian multi-kumpulan
+    const matchedTests = activeTests.filter(t => {
+      const testGroups = t.group_name ? t.group_name.split(',').map((g: string) => g.trim()) : [];
+      return t.faculty === selectedFaculty && 
+             t.course_code === selectedCourse && 
+             testGroups.includes(selectedGroup);
+    });
 
     setFilteredTests(matchedTests);
   };
@@ -104,6 +112,12 @@ export default function StudentPortal() {
     e.preventDefault();
     if (!studentName.trim() || !studentMatric.trim() || !selectedTest) {
       alert("Sila masukkan Nama Penuh dan No. Matrik anda.");
+      return;
+    }
+
+    // VALIDASI KETAT: NOMBOR MATRIK MINIMUM 10 AKSARA
+    if (studentMatric.trim().length < 10) {
+      alert("Ralat Pendaftaran:\nNombor Matrik / Kad Pelajar anda tidak sah. Sila masukkan sekurang-kurangnya 10 aksara/digit (Contoh: 2026123456).");
       return;
     }
 
@@ -137,7 +151,8 @@ export default function StudentPortal() {
           .insert([{
             test_id: selectedTest.id,
             student_name: studentName.toUpperCase(),
-            student_matric: studentMatric
+            student_matric: studentMatric,
+            status: 'ongoing'
           }])
           .select()
           .single();
@@ -146,8 +161,9 @@ export default function StudentPortal() {
         sessionId = newSession.id;
       }
 
-      // 3. Simpan Session ID di LocalStorage untuk sekuriti sementara dan Bawa ke Bilik Menunggu
+      // 3. Simpan Session ID dan Group Terpilih di LocalStorage dan Bawa ke Bilik Menunggu
       localStorage.setItem('abqari_student_session', sessionId);
+      localStorage.setItem('abqari_student_group', selectedGroup); // Simpan Kumpulan Terpilih
       router.push(`/ujian/${selectedTest.id}/intro`);
 
     } catch (error: any) {
@@ -245,14 +261,14 @@ export default function StudentPortal() {
 
             <div style={{ backgroundColor: '#eff6ff', padding: '15px', borderRadius: '8px', borderLeft: '4px solid #3b82f6', marginBottom: '25px' }}>
               <h3 style={{ margin: '0 0 5px 0', color: '#1e3a8a', fontSize: '1.1rem' }}>{selectedTest.test_name}</h3>
-              <p style={{ margin: 0, fontSize: '0.85rem', color: '#1e40af' }}>{selectedTest.course_code} - {selectedTest.course_name} ({selectedTest.group_name})</p>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: '#1e40af' }}>{selectedTest.course_code} - {selectedTest.course_name} ({selectedGroup})</p>
             </div>
 
             <h2 style={{ margin: '0 0 20px 0', color: '#0f172a', textAlign: 'center', fontSize: '1.4rem' }}>Pendaftaran Calon</h2>
             <p style={{ textAlign: 'center', fontSize: '0.85rem', color: '#64748b', marginBottom: '25px' }}>Sila masukkan maklumat rasmi anda. Maklumat ini akan direkodkan bersama jawapan anda.</p>
 
             <form onSubmit={handleRegisterSession}>
-              <label style={styles.label}>Nama Penuh</label>
+              <label style={styles.label}>Nama Penuh (Seperti dalam Kad Pengenalan)</label>
               <input 
                 type="text" 
                 required 
@@ -262,12 +278,12 @@ export default function StudentPortal() {
                 onChange={e => setStudentName(e.target.value.toUpperCase())} 
               />
 
-              <label style={styles.label}>Nombor Matrik</label>
+              <label style={styles.label}>Nombor Matrik / Kad Pelajar</label>
               <input 
                 type="text" 
                 required 
                 style={styles.input} 
-                placeholder="Cth: 2023123456" 
+                placeholder="Cth: 2026123456" 
                 value={studentMatric} 
                 onChange={e => setStudentMatric(e.target.value)} 
               />
