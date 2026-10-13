@@ -413,10 +413,10 @@ export default function DashboardUtama() {
     
     // --- MODUL KE-7: TETAPAN & KONFIGURASI (TERBUKA KEPADA SEMUA PENSYARAH) ---
     {
-      id: 'tetapan', title: 'Tetapan & Konfigurasi',
-      desc: 'Urus identiti institusi, muat naik logo kustom, dan tetapan format muka depan soalan.',
+      id: 'tetapan', title: 'Konfigurasi Ujian Online',
+      desc: 'Urus ujian online, pengaturan semester, tetapan ujian, dan penilaian online.',
       icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>,
-      link: '/konfigurasi',
+      link: '/tetapan',
       bgColor: '#fef2f2',
       showForLecturer: true 
     },
@@ -424,7 +424,7 @@ export default function DashboardUtama() {
     // --- MODUL KE-8: PAPAN PEMUKA PENTADBIR (TERKUNCI KHAS ADMIN) ---
     {
       id: 'admin', title: 'Papan Pemuka Pentadbir',
-      desc: 'Pusat kawalan berpusat untuk mengurus pengguna, semester, dan pemantauan sistem pentadbir.',
+      desc: 'Pusat kawalan berpusat pengurusan pentadbiran pengguna dan konfigurasi template.',
       icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#be185d" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12l5.25 5 2.625-3 3.375 3 2.625-3 5.25 5v5h-19v-5z"></path><path d="M12 2v10"></path></svg>,
       link: '/admin', 
       bgColor: '#fdf2f8',
