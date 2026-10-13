@@ -15,6 +15,7 @@ export default function KonfigurasiProfilPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false); // KESAN STATUS ADMIN
 
   // STATE BORANG
   const [institutionType, setInstitutionType] = useState('uitm');
@@ -36,6 +37,11 @@ export default function KonfigurasiProfilPage() {
       }
       
       setUserId(session.user.id);
+
+      // KESAN STATUS PENGGUNA SAMA ADA ADMIN ATAU TIDAK
+      const adminEmails = ['admin@uitm.edu.my', 'syahiran@uitm.edu.my'];
+      const isAdminUser = adminEmails.includes(session.user.email || '') || session.user.user_metadata?.role === 'admin';
+      setIsAdmin(isAdminUser);
 
       const { data } = await supabase
         .from('user_profiles')
@@ -105,8 +111,12 @@ export default function KonfigurasiProfilPage() {
       
       alert('✅ Konfigurasi profil berjaya disimpan!');
       
-      // Kembali ke Papan Pemuka Utama
-      router.push('/');
+      // PULANG KE HALAMAN YANG BETUL BERDASARKAN PERANAN
+      if (isAdmin) {
+        router.push('/admin');
+      } else {
+        router.push('/');
+      }
       
     } catch (error: any) {
       alert(`Ralat Tidak Dijangka: ${error.message}`);
@@ -133,8 +143,13 @@ export default function KonfigurasiProfilPage() {
           <h1 style={{ margin: 0, color: '#fde047', fontSize: '1.75rem', fontWeight: '900' }}>ABQARI <span style={{ color: 'white', fontWeight: '300' }}>| Konfigurasi</span></h1>
           <p style={{ margin: '4px 0 0 0', fontSize: '0.88rem', color: '#cbd5e1' }}>Tetapan Templat & Identiti Institusi</p>
         </div>
-        <Link href="/admin" style={{ color: 'white', textDecoration: 'none', backgroundColor: 'rgba(255,255,255,0.12)', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600' }}>
-          ← Kembali ke Papan Pemuka
+        
+        {/* BUTANG KEMBALI DINAMIK (MENGIKUT PERANAN) */}
+        <Link 
+          href={isAdmin ? "/admin" : "/"} 
+          style={{ color: 'white', textDecoration: 'none', backgroundColor: 'rgba(255,255,255,0.12)', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600' }}
+        >
+          ← Kembali ke Papan Pemuka {isAdmin ? 'Admin' : 'Utama'}
         </Link>
       </div>
 

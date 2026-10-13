@@ -411,17 +411,29 @@ export default function DashboardUtama() {
       showForLecturer: false 
     },
     
-    // --- MODUL KE-7: TETAPAN & KONFIGURASI (TERBUKA KEPADA SEMUA PENSYARAH) ---
+    // --- MODUL BESAR UJIAN ONLINE: KHAS PENTADBIR (/tetapan) ---
     {
-      id: 'tetapan', title: 'Konfigurasi Ujian Online',
+      id: 'tetapan', title: 'Pengurusan Ujian Online',
       desc: 'Urus ujian online, pengaturan semester, tetapan ujian, dan penilaian online.',
-      icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>,
+      icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>,
       link: '/tetapan',
-      bgColor: '#fef2f2',
-      showForLecturer: true 
+      bgColor: '#e0e7ff',
+      showForLecturer: false, // Tidak muncul di pensyarah
+      hideForAdmin: false     // Kekal muncul di Admin
     },
 
-    // --- MODUL KE-8: PAPAN PEMUKA PENTADBIR (TERKUNCI KHAS ADMIN) ---
+    // --- MODUL KONFIGURASI TEMPLATE SOALAN: KHAS PENSYARAH (/konfigurasi) ---
+    {
+      id: 'konfigurasi-template', title: 'Konfigurasi Template Soalan',
+      desc: 'Urus identiti institusi, muat naik logo kustom, dan tetapan format muka depan soalan.',
+      icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>,
+      link: '/konfigurasi',
+      bgColor: '#fef2f2',
+      showForLecturer: true, // Muncul di Pensyarah
+      hideForAdmin: true     // Disembunyikan daripada Admin (kerana sudah ada di dalam /admin)
+    },
+
+    // --- MODUL PAPAN PEMUKA PENTADBIR: KHAS ADMIN (/admin) ---
     {
       id: 'admin', title: 'Papan Pemuka Pentadbir',
       desc: 'Pusat kawalan berpusat pengurusan pentadbiran pengguna dan konfigurasi template.',
@@ -621,7 +633,7 @@ export default function DashboardUtama() {
 
           <div style={styles.statCard}>
             <div style={{ backgroundColor: 'rgba(255,255,255,0.12)', padding: '10px', borderRadius: '10px' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '900', color: '#38bdf8' }}>{isLoadingStats ? '...' : stats.docs}</h3>
