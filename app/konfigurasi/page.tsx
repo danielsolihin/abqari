@@ -133,7 +133,7 @@ export default function KonfigurasiProfilPage() {
           <h1 style={{ margin: 0, color: '#fde047', fontSize: '1.75rem', fontWeight: '900' }}>ABQARI <span style={{ color: 'white', fontWeight: '300' }}>| Konfigurasi</span></h1>
           <p style={{ margin: '4px 0 0 0', fontSize: '0.88rem', color: '#cbd5e1' }}>Tetapan Templat & Identiti Institusi</p>
         </div>
-        <Link href="/" style={{ color: 'white', textDecoration: 'none', backgroundColor: 'rgba(255,255,255,0.12)', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600' }}>
+        <Link href="/admin" style={{ color: 'white', textDecoration: 'none', backgroundColor: 'rgba(255,255,255,0.12)', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600' }}>
           ← Kembali ke Papan Pemuka
         </Link>
       </div>
