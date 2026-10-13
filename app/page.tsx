@@ -307,7 +307,7 @@ export default function DashboardUtama() {
       position: 'absolute' as const, top: 0, left: 0, right: 0, 
       minHeight: '320px',
       background: 'linear-gradient(135deg, #3b0764, #4a154b)',
-      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cg stroke='%23ffffff' stroke-width='1.5' fill='none' stroke-opacity='0.07'%3E%3Cg transform='translate(30,30)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3Cg transform='translate(0,0)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3Cg transform='translate(60,0)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3Cg transform='translate(0,60)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3Cg transform='translate(60,60)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3C/g%3E%3C/svg%3E"), linear-gradient(135deg, #3b0764, #4a154b)`,
+      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cg stroke='%23ffffff' stroke-width='1.5' fill='none' stroke-opacity='0.07'%3E%3Cg transform='translate(30,30)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3Cg transform='translate(0,0)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3Cg transform='translate(60,0)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3Cg transform='translate(0,60)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3Cg transform='translate(60,60)'%3E%3Crect x='-15' y='-15' width='30' height='30' /%3E%3Crect x='-15' y='-15' width='30' height='30' transform='rotate(45)' /%3E%3C/g%3E%3C/svg%3E"), linear-gradient(135deg, #3b0764, #4a154b)`,
       boxShadow: '0 4px 15px rgba(0,0,0,0.15)',
       zIndex: 0,
       borderBottom: '4px solid #fde047'
@@ -330,7 +330,7 @@ export default function DashboardUtama() {
       color: 'white', 
       display: 'flex', 
       alignItems: 'center', 
-      gap: '16px',
+      gap: '16px', 
       boxShadow: '0 10px 20px rgba(0,0,0,0.18)',
       position: 'relative' as const, 
       overflow: 'hidden' as const
@@ -393,8 +393,8 @@ export default function DashboardUtama() {
       icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>,
       link: '/pengurusan-ujian', 
       bgColor: '#e0e7ff',
-      showForLecturer: true, // Dipaparkan kepada pensyarah biasa
-      hideForAdmin: true     // Sembunyikan untuk Admin
+      showForLecturer: true,
+      hideForAdmin: true
     },
     {
       id: 'chat', title: 'Pembantu AI (RAG)',
@@ -411,30 +411,28 @@ export default function DashboardUtama() {
       showForLecturer: false 
     },
     
-    // --- MODUL KE-7: TETAPAN (DIKEMBALIKAN SEMULA) ---
+    // --- MODUL KE-7: TETAPAN & KONFIGURASI (TERBUKA KEPADA SEMUA PENSYARAH) ---
     {
       id: 'tetapan', title: 'Tetapan & Konfigurasi',
-      desc: 'Urus profil pensyarah, kemas kini templat MS Word rasmi, dan kawalan tetapan enjin AI.',
+      desc: 'Urus identiti institusi, muat naik logo kustom, dan tetapan format muka depan soalan.',
       icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>,
-      link: '/admin', // tetapan pentadbir penting tidak boleh diubah
+      link: '/konfigurasi',
       bgColor: '#fef2f2',
-      showForLecturer: false 
+      showForLecturer: true 
     },
 
-    // --- MODUL KE-8: PAPAN PEMUKA PENTADBIR (BAHARU) ---
+    // --- MODUL KE-8: PAPAN PEMUKA PENTADBIR (TERKUNCI KHAS ADMIN) ---
     {
       id: 'admin', title: 'Papan Pemuka Pentadbir',
-      desc: 'Pusat kawalan berpusat untuk mengurus pengguna, semester, dan memantau ujian peperiksaan dalam talian.',
+      desc: 'Pusat kawalan berpusat untuk mengurus pengguna, semester, dan pemantauan sistem pentadbir.',
       icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#be185d" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12l5.25 5 2.625-3 3.375 3 2.625-3 5.25 5v5h-19v-5z"></path><path d="M12 2v10"></path></svg>,
-      link: '/tetapan', 
+      link: '/admin', 
       bgColor: '#fdf2f8',
       showForLecturer: false 
     }
   ];
 
-  // Penapisan pintar: 
-  // Jika pengguna adalah Admin, sembunyikan modul yang ada `hideForAdmin: true`
-  // Jika pengguna biasa, papar modul yang `showForLecturer: true`
+  // Penapisan pintar mengikut peranan
   const activeMenu = menuItems.filter(item => {
     if (isAdmin) {
       return item.hideForAdmin !== true; 
@@ -550,7 +548,7 @@ export default function DashboardUtama() {
                       fontSize: '0.78rem', 
                       fontWeight: 'bold', 
                       cursor: 'pointer', 
-                      display: 'flex',
+                      display: 'flex', 
                       alignItems: 'center', 
                       justifyContent: 'center', 
                       gap: '5px', 
@@ -623,7 +621,7 @@ export default function DashboardUtama() {
 
           <div style={styles.statCard}>
             <div style={{ backgroundColor: 'rgba(255,255,255,0.12)', padding: '10px', borderRadius: '10px' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '900', color: '#38bdf8' }}>{isLoadingStats ? '...' : stats.docs}</h3>
@@ -661,8 +659,8 @@ export default function DashboardUtama() {
                   padding: '4px 8px',
                   borderRadius: '20px', 
                   fontSize: '0.75rem', 
-                  fontWeight: 'bold',
-                  boxShadow: '0 0 12px rgba(239, 68, 68, 0.8)',
+                  fontWeight: 'bold', 
+                  boxShadow: '0 0 12px rgba(239, 68, 68, 0.8)', 
                   animation: 'blinkAnim 1.5s infinite',
                   border: '1px solid #fca5a5'
                 }}>
